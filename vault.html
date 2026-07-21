@@ -405,6 +405,20 @@
         .theme-card .tc-name .chk { color: var(--accent); margin-left: auto; }
         .theme-swatch { display: flex; gap: 5px; }
         .theme-swatch i { width: 24px; height: 24px; border-radius: 5px; display: block; border: 1px solid rgba(255,255,255,.1); }
+        /* [MP-美化] 自助配色面板 */
+        .theme-custom { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+        .theme-custom.active { }
+        .tc-title { font-weight: 600; color: var(--ink); font-size: 13px; margin-bottom: 10px; }
+        .cf-preview { display: flex; gap: 6px; margin-bottom: 12px; }
+        .cf-preview i { flex: 1; height: 30px; border-radius: 6px; display: block; border: 1px solid rgba(128,128,128,.25); transition: background .1s; }
+        .cf-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+        .cf-row input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+        .cf-val { width: 30px; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+        .cf-mode { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+        .cf-mode-btn { flex: 1; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); transition: border-color .15s, color .15s; }
+        .cf-mode-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .cf-reset { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: transparent; color: var(--muted); }
+        @media (hover: hover) { .cf-mode-btn:hover, .cf-reset:hover { border-color: var(--accent); } }
 
         /* [MP-美化] 细滚动条 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -469,6 +483,18 @@
                 <button class="theme-close" id="theme-close" title="关闭">✕</button>
             </div>
             <div class="theme-grid" id="theme-grid"></div>
+            <!-- [MP-美化] 自助配色：拖滑杆实时生成整套色板，不会写CSS也能调 -->
+            <div class="theme-custom" id="theme-custom">
+                <div class="tc-title">自助配色 · 拖动即生效</div>
+                <div class="cf-preview"><i id="cf-p-bg"></i><i id="cf-p-accent"></i><i id="cf-p-accent2"></i><i id="cf-p-ai"></i></div>
+                <label class="cf-row">色相 <input type="range" id="cf-hue" min="0" max="360" value="42" /><span class="cf-val" id="cf-hue-v">42</span></label>
+                <label class="cf-row">浓度 <input type="range" id="cf-sat" min="0" max="100" value="55" /><span class="cf-val" id="cf-sat-v">55</span></label>
+                <div class="cf-mode">
+                    <button class="cf-mode-btn active" id="cf-dark">暗色底</button>
+                    <button class="cf-mode-btn" id="cf-light">亮色底</button>
+                    <button class="cf-reset" id="cf-reset" title="回到预设主题">重置</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1796,8 +1822,13 @@
                 return;
             }
             const useStream = codexCfg && codexCfg.stream !== false;
-            const userText = '【现有档案】\n' + (codexExistingDoc || '（暂无，请按分节新建）')
-                + '\n\n【新增区间原文】\n' + (payload.text || '');
+            // [MP] 档案上下文增强：把最新一卷总结垫在最前当背景，让AI提炼时知道近期剧情走向，
+            //      角色状态/世界事实不至于跟已发生的情节打架（借鉴柏宝书"先垫背景再抽取"）
+            const bgSum = (await latestSummaryText() || '').trim();
+            const userText =
+                (bgSum ? '【最新一卷剧情总结·仅作背景参考，勿并入档案】\n' + bgSum + '\n\n' : '')
+                + '【现有档案】\n' + (codexExistingDoc || '（暂无，请按分节新建）')
+                + '\n\n【新增区间原文·从这里提炼并入档案】\n' + (payload.text || '');
             const ta = document.getElementById('codex-text');
             let onProgress = null;
             if (useStream) {
@@ -2181,6 +2212,7 @@
         ];
         function currentTheme() { try { return localStorage.getItem('mp_theme') || 'honey'; } catch (e) { return 'honey'; } }
         function applyTheme(key) {
+            clearCustomVars();   // [MP-美化] 切到预设主题前，先抹掉自助配色留下的内联色变量
             if (!key || key === 'honey') document.documentElement.removeAttribute('data-theme');
             else document.documentElement.setAttribute('data-theme', key);
             try { localStorage.setItem('mp_theme', key || 'honey'); } catch (e) {}
@@ -2202,9 +2234,99 @@
             });
         }
         function closeThemeModal() { document.getElementById('theme-modal').classList.remove('show'); }
-        document.getElementById('btn-theme').onclick = () => { renderThemeGrid(); document.getElementById('theme-modal').classList.add('show'); closeSidebar(); };
+        document.getElementById('btn-theme').onclick = () => { renderThemeGrid(); syncCustomUI(); document.getElementById('theme-modal').classList.add('show'); closeSidebar(); };
         document.getElementById('theme-close').onclick = closeThemeModal;
         document.getElementById('theme-modal').onclick = (e) => { if (e.target.id === 'theme-modal') closeThemeModal(); };
+
+        // [MP-美化] ============ 自助配色（滑杆生成整套色板，写进 :root 内联样式） ============
+        const MP_VARS = ['--bg', '--panel', '--panel2', '--panel3', '--ink', '--muted', '--line', '--user', '--ai', '--accent', '--accent2', '--accent-rgb', '--on-accent', '--ok', '--warn'];
+        function clearCustomVars() { const s = document.documentElement.style; MP_VARS.forEach(v => s.removeProperty(v)); }
+        // HSL(h 0-360, s 0-100, l 0-100) -> {r,g,b}
+        function hsl2rgb(h, s, l) {
+            h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+            const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+            let r = 0, g = 0, b = 0;
+            if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
+            else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+            return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
+        }
+        function hex(h, s, l) { const c = hsl2rgb(h, s, l); return '#' + [c.r, c.g, c.b].map(v => v.toString(16).padStart(2, '0')).join(''); }
+        // 用主色相 h + 浓度 sat + 明暗 dark 生成整套色板
+        function genPalette(h, sat, dark) {
+            const s = Math.max(0, Math.min(100, sat));
+            const bgS = Math.min(dark ? 10 : 16, s * (dark ? 0.5 : 0.3));   // 背景只带一点点色相
+            const accL = dark ? 58 : 44;
+            const onAccent = accL >= 55 ? hex(h, 30, 12) : '#ffffff';
+            const rgb = hsl2rgb(h, s, accL);
+            if (dark) return {
+                '--bg': hex(h, bgS, 10), '--panel': hex(h, bgS, 14), '--panel2': hex(h, bgS, 18), '--panel3': hex(h, bgS, 23),
+                '--ink': hex(h, 8, 87), '--muted': hex(h, 8, 60), '--line': hex(h, bgS, 24),
+                '--user': hex(212, 45, 62), '--ai': hex(268, 46, 68),
+                '--accent': hex(h, s, accL), '--accent2': hex(h, s, 70), '--accent-rgb': `${rgb.r}, ${rgb.g}, ${rgb.b}`,
+                '--on-accent': onAccent, '--ok': hex(145, 45, 58), '--warn': hex(14, 62, 58),
+            };
+            return {
+                '--bg': hex(h, bgS, 92), '--panel': hex(h, bgS, 98), '--panel2': hex(h, bgS, 95), '--panel3': hex(h, bgS, 90),
+                '--ink': hex(h, 22, 16), '--muted': hex(h, 14, 42), '--line': hex(h, bgS, 84),
+                '--user': hex(212, 55, 40), '--ai': hex(268, 48, 52),
+                '--accent': hex(h, s, accL), '--accent2': hex(h, s, 32), '--accent-rgb': `${rgb.r}, ${rgb.g}, ${rgb.b}`,
+                '--on-accent': onAccent, '--ok': hex(145, 48, 40), '--warn': hex(12, 62, 48),
+            };
+        }
+        function readCustomCfg() {
+            try { const j = JSON.parse(localStorage.getItem('mp_theme_custom') || ''); if (j && typeof j.h === 'number') return { h: j.h, s: j.s, dark: j.dark !== false }; } catch (e) {}
+            return { h: 42, s: 55, dark: true };
+        }
+        function applyCustom(cfg, persist) {
+            clearCustomVars();
+            document.documentElement.removeAttribute('data-theme');
+            const p = genPalette(cfg.h, cfg.s, cfg.dark);
+            const st = document.documentElement.style;
+            for (const k in p) st.setProperty(k, p[k]);
+            if (persist !== false) { try { localStorage.setItem('mp_theme', 'custom'); localStorage.setItem('mp_theme_custom', JSON.stringify(cfg)); } catch (e) {} }
+            // 预览小色块
+            const P = genPalette(cfg.h, cfg.s, cfg.dark);
+            const setBg = (id, c) => { const el = document.getElementById(id); if (el) el.style.background = c; };
+            setBg('cf-p-bg', P['--bg']); setBg('cf-p-accent', P['--accent']); setBg('cf-p-accent2', P['--accent2']); setBg('cf-p-ai', P['--ai']);
+        }
+        // 弹窗打开时把滑杆/按钮/预览同步到当前状态
+        function syncCustomUI() {
+            const cfg = readCustomCfg();
+            const isCustom = currentTheme() === 'custom';
+            document.getElementById('cf-hue').value = cfg.h;
+            document.getElementById('cf-sat').value = cfg.s;
+            document.getElementById('cf-hue-v').textContent = cfg.h;
+            document.getElementById('cf-sat-v').textContent = cfg.s;
+            document.getElementById('cf-dark').classList.toggle('active', cfg.dark);
+            document.getElementById('cf-light').classList.toggle('active', !cfg.dark);
+            document.getElementById('theme-custom').classList.toggle('active', isCustom);
+            // 预览用当前配置渲染（不落库）
+            const P = genPalette(cfg.h, cfg.s, cfg.dark);
+            const setBg = (id, c) => { const el = document.getElementById(id); if (el) el.style.background = c; };
+            setBg('cf-p-bg', P['--bg']); setBg('cf-p-accent', P['--accent']); setBg('cf-p-accent2', P['--accent2']); setBg('cf-p-ai', P['--ai']);
+        }
+        function customFromUI() {
+            return {
+                h: Number(document.getElementById('cf-hue').value),
+                s: Number(document.getElementById('cf-sat').value),
+                dark: document.getElementById('cf-dark').classList.contains('active'),
+            };
+        }
+        function pushCustom() {
+            const cfg = customFromUI();
+            document.getElementById('cf-hue-v').textContent = cfg.h;
+            document.getElementById('cf-sat-v').textContent = cfg.s;
+            applyCustom(cfg, true);
+            document.getElementById('theme-custom').classList.add('active');
+            renderThemeGrid();   // 预设卡片取消勾选
+        }
+        document.getElementById('cf-hue').addEventListener('input', pushCustom);
+        document.getElementById('cf-sat').addEventListener('input', pushCustom);
+        document.getElementById('cf-dark').onclick = () => { document.getElementById('cf-dark').classList.add('active'); document.getElementById('cf-light').classList.remove('active'); pushCustom(); };
+        document.getElementById('cf-light').onclick = () => { document.getElementById('cf-light').classList.add('active'); document.getElementById('cf-dark').classList.remove('active'); pushCustom(); };
+        document.getElementById('cf-reset').onclick = () => { applyTheme('honey'); renderThemeGrid(); syncCustomUI(); document.getElementById('theme-custom').classList.remove('active'); toast('已回到蜜金'); };
+        // 启动时若上次选的是自助配色，重新套用（防刷新丢失）
+        if (currentTheme() === 'custom') applyCustom(readCustomCfg(), false);
 
         // [MP] ============ 导出 / 导入 ============
         document.getElementById('btn-export').onclick = async () => {
