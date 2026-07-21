@@ -150,6 +150,8 @@
         .srow { margin-bottom: 8px; }
         /* [MP] 折叠式提示词编辑（塞在总结/档案视图底部，平时收起） */
         .prompt-fold { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+        /* [MP-美化] 顶部变体：分隔线改到下方，收在操作区之上 */
+        .prompt-fold.top { margin-top: 4px; margin-bottom: 10px; padding-top: 0; padding-bottom: 10px; border-top: none; border-bottom: 1px dashed var(--line); }
         .prompt-fold summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         .prompt-fold textarea { margin-top: 8px; }
         .srow.inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -441,6 +443,12 @@
             <span class="floor-meta" id="lastvol"></span>
         </div>
 
+        <!-- [MP-美化] 提示词挪到板块顶部，先看规则再生成 -->
+        <details class="prompt-fold top">
+            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
+            <textarea id="s-prompt" rows="6"></textarea>
+        </details>
+
         <div class="summary-work">
             <div class="srow inline">
                 <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
@@ -456,11 +464,6 @@
         </div>
 
         <div class="summary-history" id="sum-history"></div>
-
-        <details class="prompt-fold">
-            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
-            <textarea id="s-prompt" rows="6"></textarea>
-        </details>
     </section>
 
     <!-- [MP] 信息档案视图（第3期） -->
@@ -469,6 +472,13 @@
             <span class="panel-title">信息档案</span>
             <span class="floor-meta" id="codex-meta"></span>
         </div>
+
+        <!-- [MP-美化] 提示词挪到板块顶部，先看规则再生成 -->
+        <details class="prompt-fold top">
+            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
+            <textarea id="s-codex-prompt" rows="6"></textarea>
+        </details>
+
         <div class="srow inline">
             <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
             <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
@@ -492,11 +502,6 @@
             <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
             <span class="floor-meta" id="inj-stat"></span>
         </div>
-
-        <details class="prompt-fold">
-            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
-            <textarea id="s-codex-prompt" rows="6"></textarea>
-        </details>
     </section>
 
     <!-- [MP] 存档总览视图：先列各聊天各自的档，再展开当前聊天的正文明细 -->
