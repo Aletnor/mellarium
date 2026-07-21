@@ -9,7 +9,7 @@
     <!-- [MP] marked 本地单文件，不走CDN；缺失时回退纯文本渲染 -->
     <script src="lib/marked.min.js" defer></script>
     <style>
-        /* [MP-美化] 蜜金暖调暗色调色板 */
+        /* [MP-美化] 主题基座：蜜金暖调暗色（默认）。切主题只覆盖 body[data-theme=xxx] 里的色板变量 */
         :root {
             --bg: #151518;
             --panel: #1e1e24;
@@ -22,11 +22,30 @@
             --ai: #8a6cd0;
             --accent: #d4a03a;
             --accent2: #e8c06a;
+            --accent-rgb: 212, 160, 58;   /* accent 的 rgb，供聚焦光晕/描边等半透明处用 */
             --ok: #5cb87a;
             --warn: #d06848;
             --radius: 10px;
             --radius-sm: 6px;
             --gap: 12px;
+        }
+
+        /* [MP-美化] 白金色系：冷调银灰暗底 + 白金亮银 accent */
+        :root[data-theme="platinum"] {
+            --bg: #131417;
+            --panel: #1c1e23;
+            --panel2: #262930;
+            --panel3: #30343d;
+            --ink: #e4e6ec;
+            --muted: #949aa8;
+            --line: #2d313b;
+            --user: #6d90c2;
+            --ai: #9d8adb;
+            --accent: #c8cfdb;
+            --accent2: #eef1f6;
+            --accent-rgb: 200, 207, 219;
+            --ok: #6bc79a;
+            --warn: #d88a6a;
         }
 
         * { box-sizing: border-box; }
@@ -178,7 +197,7 @@
         /* [MP-美化] 输入聚焦蜜金描边 */
         input:focus, textarea:focus, select:focus {
             outline: none; border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(212, 160, 58, 0.15);
+            box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
         }
         /* [MP-美化] 总结/档案大文本框更舒展 */
         .summary-work textarea, #codex-text { min-height: 180px; line-height: 1.7; padding: 12px 14px; font-size: 14.5px; }
@@ -211,7 +230,7 @@
             overflow: hidden;
             transition: border-color .15s;
         }
-        .floor.open { border-color: rgba(212, 160, 58, 0.3); }
+        .floor.open { border-color: rgba(var(--accent-rgb), 0.3); }
         .floor:has(.badge.hidden) { opacity: .5; }
         @media (hover: hover) { .floor:has(.badge.hidden):hover { opacity: .8; } }
 
@@ -336,7 +355,7 @@
         .arc-row .arc-bits { flex: 1; text-align: right; }
         /* [MP] 注入落点标记线 */
         /* [MP-美化] 注入标记线（图标已在 JS 里用细星 ✦，此处不加 ::before） */
-        .inject-marker { border: 1px dashed rgba(212, 160, 58, 0.5); background: rgba(33, 29, 18, 0.7); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; }
+        .inject-marker { border: 1px dashed rgba(var(--accent-rgb), 0.5); background: rgba(var(--accent-rgb), 0.08); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; }
         .inject-marker .im-head { color: var(--accent2); font-weight: 600; padding-left: 2px; }
         .inject-marker .im-sub { color: #9a9aa6; font-size: 12px; margin-top: 2px; }
         .inject-marker .im-detail { margin-top: 6px; }
@@ -369,6 +388,22 @@
         .tools-group.show { display: block; }
         .icon-btn { font-size: 16px; line-height: 1; padding: 4px 9px; }
 
+        /* [MP-美化] 外观（主题）弹窗 */
+        #theme-modal { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,.6); }
+        #theme-modal.show { display: flex; }
+        .theme-dialog { width: 100%; max-width: 460px; max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.5); padding: 16px 18px; }
+        .theme-dialog-head { display: flex; align-items: center; margin-bottom: 14px; }
+        .theme-dialog-head .t { font-weight: 700; color: var(--accent); font-size: 16px; flex: 1; }
+        .theme-close { background: transparent; border: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 8px; cursor: pointer; }
+        .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .theme-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; cursor: pointer; background: var(--panel2); transition: border-color .15s; text-align: left; width: 100%; }
+        @media (hover: hover) { .theme-card:hover { border-color: var(--accent); } }
+        .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .2); }
+        .theme-card .tc-name { font-weight: 600; margin-bottom: 9px; display: flex; align-items: center; gap: 6px; color: var(--ink); }
+        .theme-card .tc-name .chk { color: var(--accent); margin-left: auto; }
+        .theme-swatch { display: flex; gap: 5px; }
+        .theme-swatch i { width: 24px; height: 24px; border-radius: 5px; display: block; border: 1px solid rgba(255,255,255,.1); }
+
         /* [MP-美化] 细滚动条 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -385,6 +420,8 @@
             body { padding-left: 232px; }
         }
     </style>
+    <!-- [MP-美化] 提前套用已存主题，避免刷新闪回默认色 -->
+    <script>try { var _t = localStorage.getItem('mp_theme'); if (_t && _t !== 'honey') document.documentElement.setAttribute('data-theme', _t); } catch (e) {}</script>
 </head>
 
 <body>
@@ -416,9 +453,22 @@
         </div>
         <div class="nav-sep"></div>
         <button id="btn-tools" class="nav-item nav-gear">⚙ 工具</button>
+        <!-- [MP-美化] 外观（主题）入口 -->
+        <button id="btn-theme" class="nav-item nav-gear">◈ 外观</button>
         <!-- [MP-美化] 版本号 -->
         <div class="nav-cap" style="padding-top:8px">蜜脾 v0.2.0</div>
     </nav>
+
+    <!-- [MP-美化] 外观（主题）弹窗 -->
+    <div id="theme-modal">
+        <div class="theme-dialog">
+            <div class="theme-dialog-head">
+                <span class="t">外观</span>
+                <button class="theme-close" id="theme-close" title="关闭">✕</button>
+            </div>
+            <div class="theme-grid" id="theme-grid"></div>
+        </div>
+    </div>
 
     <div class="dirty-banner" id="dirty">聊天数据已变化，点击刷新快照</div>
 
@@ -2120,6 +2170,39 @@
         document.querySelectorAll('.nav-item[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
         // [MP] 齿轮展开/收起工具组
         document.getElementById('btn-tools').onclick = () => document.getElementById('tools-group').classList.toggle('show');
+
+        // [MP-美化] ============ 外观（主题） ============
+        // 新增主题：往 MP_THEMES 加一行 + 在 <style> 里补一段 :root[data-theme="key"]{...} 色板即可
+        const MP_THEMES = [
+            { key: 'honey',    name: '蜜金', swatch: ['#151518', '#d4a03a', '#e8c06a', '#8a6cd0'] },
+            { key: 'platinum', name: '白金', swatch: ['#131417', '#c8cfdb', '#eef1f6', '#9d8adb'] },
+        ];
+        function currentTheme() { try { return localStorage.getItem('mp_theme') || 'honey'; } catch (e) { return 'honey'; } }
+        function applyTheme(key) {
+            if (!key || key === 'honey') document.documentElement.removeAttribute('data-theme');
+            else document.documentElement.setAttribute('data-theme', key);
+            try { localStorage.setItem('mp_theme', key || 'honey'); } catch (e) {}
+        }
+        function renderThemeGrid() {
+            const cur = currentTheme();
+            const grid = document.getElementById('theme-grid');
+            grid.innerHTML = MP_THEMES.map(t =>
+                `<button class="theme-card${t.key === cur ? ' active' : ''}" data-theme-key="${t.key}">` +
+                `<div class="tc-name">${esc(t.name)}${t.key === cur ? '<span class="chk">✓</span>' : ''}</div>` +
+                `<div class="theme-swatch">${t.swatch.map(c => `<i style="background:${c}"></i>`).join('')}</div>` +
+                `</button>`
+            ).join('');
+            grid.querySelectorAll('.theme-card').forEach(b => b.onclick = () => {
+                applyTheme(b.dataset.themeKey);
+                renderThemeGrid();
+                const t = MP_THEMES.find(x => x.key === b.dataset.themeKey);
+                toast('外观已切换：' + (t ? t.name : ''));
+            });
+        }
+        function closeThemeModal() { document.getElementById('theme-modal').classList.remove('show'); }
+        document.getElementById('btn-theme').onclick = () => { renderThemeGrid(); document.getElementById('theme-modal').classList.add('show'); closeSidebar(); };
+        document.getElementById('theme-close').onclick = closeThemeModal;
+        document.getElementById('theme-modal').onclick = (e) => { if (e.target.id === 'theme-modal') closeThemeModal(); };
 
         // [MP] ============ 导出 / 导入 ============
         document.getElementById('btn-export').onclick = async () => {
