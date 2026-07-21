@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<!-- [MP] 蜜脾 Mellarium · 主页面(vault) — 独立HTML，与酒馆同源，浏览器新标签打开 -->
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>蜜脾 Mellarium</title>
+    <!-- [MP] marked 本地单文件，不走CDN；缺失时回退纯文本渲染 -->
+    <script src="lib/marked.min.js" defer></script>
+    <style>
+        :root {
+            --bg: #1a1a1e;
+            --panel: #24242b;
+            --panel2: #2c2c35;
+            --ink: #e6e6ea;
+            --muted: #9a9aa6;
+            --line: #3a3a44;
+            --user: #3b6ea5;
+            --ai: #7a5cc0;
+            --accent: #d8a33b;
+            --ok: #4caf72;
+            --warn: #d86a4a;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .title { font-weight: 700; color: var(--accent); }
+
+        .chatkey {
+            font-size: 13px;
+            color: var(--muted);
+            padding: 3px 8px;
+            background: var(--panel2);
+            border-radius: 6px;
+        }
+
+        .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+        .dot.on { background: var(--ok); }
+        .dot.off { background: var(--warn); }
+
+        .spacer { flex: 1; }
+
+        button {
+            background: var(--panel2);
+            color: var(--ink);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        /* [MP] 只在真有指针悬停的设备上做 hover，手机触屏不再点完粘住高亮 */
+        @media (hover: hover) {
+            button:hover:not(:disabled) { border-color: var(--accent); }
+        }
+        button:focus { outline: none; }        /* [MP] 去掉点完残留的焦点框 */
+        button:active:not(:disabled) { border-color: var(--accent); transform: translateY(1px); } /* [MP] 只在按下瞬间给反馈 */
+        button:disabled { opacity: .4; cursor: not-allowed; }
+        button.primary { background: var(--accent); color: #1a1a1e; border-color: var(--accent); font-weight: 600; }
+
+        .dirty-banner {
+            display: none;
+            background: var(--warn);
+            color: #fff;
+            padding: 6px 16px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .dirty-banner.show { display: block; }
+
+        .toolbar {
+            padding: 10px 16px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+        .toolbar input[type="text"] {
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            color: var(--ink);
+            border-radius: 6px;
+            padding: 5px 8px;
+            min-width: 200px;
+        }
+
+        .panel {
+            max-width: 1000px;
+            margin: 12px auto 0;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+
+        .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .panel-title { font-weight: 700; color: var(--accent); }
+
+        .settings { display: none; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+        .settings.show { display: block; }
+        .srow { margin-bottom: 8px; }
+        /* [MP] 折叠式提示词编辑（塞在总结/档案视图底部，平时收起） */
+        .prompt-fold { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+        .prompt-fold summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+        .prompt-fold textarea { margin-top: 8px; }
+        .srow.inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .srow label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+        .srow.inline label { display: flex; align-items: center; gap: 4px; margin-bottom: 0; }
+        .panel select { background: var(--panel2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 6px 8px; font-size: 14px; }
+        .api-status { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 15px; font-weight: 600; line-height: 1.4; word-break: break-all; background: #2a2a2a; color: var(--muted); border: 1px solid var(--line); }
+        .api-status.busy { background: #3a3320; color: #ffd479; border-color: #7a6a30; }
+        .api-status.ok { background: #1e3a24; color: #7ee08a; border-color: #2f7a3f; }
+        .api-status.err { background: #3a1e1e; color: #ff8a8a; border-color: #7a2f2f; }
+
+        .panel input[type="text"], .panel input[type="password"], .panel input[type="number"], .panel textarea {
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            color: var(--ink);
+            border-radius: 6px;
+            padding: 6px 8px;
+            width: 100%;
+            font: inherit;
+        }
+
+        .panel textarea { resize: vertical; }
+        .summary-work textarea { margin: 8px 0; }
+
+        .sum-item {
+            border-top: 1px solid var(--line);
+            padding: 8px 0;
+            font-size: 13px;
+        }
+
+        .sum-item .meta { color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .sum-item .meta button { font-size: 12px; padding: 3px 8px; }
+        .sum-item .applied { color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+        .sum-detail { margin-top: 6px; }
+        .sum-detail > summary { cursor: pointer; color: var(--muted); list-style: revert; }
+        .sum-full { white-space: pre-wrap; margin-top: 6px; padding: 8px; background: var(--panel2); border-radius: 6px; color: var(--ink); }
+
+        main { padding: 12px 16px 80px; max-width: 1000px; margin: 0 auto; }
+
+        .floor {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+
+        .floor-head {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .floor-head:hover { background: var(--panel2); }
+        .badge { font-size: 12px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
+        .badge.user { background: var(--user); color: #fff; }
+        .badge.ai { background: var(--ai); color: #fff; }
+        .badge.hidden { background: #555; color: #ccc; }
+        .floor-meta { font-size: 12px; color: var(--muted); }
+        .floor-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+        .swipes { display: none; padding: 0 12px 10px; }
+        .floor.open .swipes { display: block; }
+
+        .swipe {
+            border-top: 1px solid var(--line);
+            padding: 10px 0;
+        }
+
+        .swipe-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .path-label { font-size: 12px; color: var(--accent); font-weight: 600; }
+        .chosen-tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; }
+        .saved-tag { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; }
+
+        .swipe-body {
+            background: var(--bg);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 10px 12px;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .swipe-body.plain { white-space: pre-wrap; }
+        .swipe-body p { margin: 0 0 .6em; }
+        .swipe-body:last-child { margin-bottom: 0; }
+
+        .empty { color: var(--muted); text-align: center; padding: 40px; }
+
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel2);
+            border: 1px solid var(--accent);
+            color: var(--ink);
+            padding: 8px 16px;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity .25s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #toast.show { opacity: 1; }
+
+        /* [MP] 调试日志：底部面板，顶栏带标题＋右上角× */
+        #debugwrap {
+            display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 200;
+            max-height: 44vh; flex-direction: column;
+            background: #0d0d10; border-top: 2px solid var(--accent);
+        }
+        #debugwrap.show { display: flex; }
+        #debughead {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 8px 6px 12px; border-bottom: 1px solid #23232a;
+            color: var(--muted); font: 600 12px/1.4 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+        #debug-close { background: transparent; border: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+        @media (hover: hover) { #debug-close:hover { color: var(--ink); } }
+        #debuglog {
+            margin: 0; padding: 8px 12px; overflow: auto; flex: 1;
+            color: #8fe08f; font: 12px/1.5 ui-monospace, Consolas, monospace;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        #debuglog .err { color: #ff8f6a; }
+        @media (min-width: 900px) { #debugwrap { left: 232px; } }
+
+        /* [MP] 存档清单 */
+        .prose-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+        .prose-legend .pl::before { content: '●'; margin-right: 3px; }
+        .pl.exact::before, .pi.exact { color: #6fcf7f; }
+        .pl.moved::before, .pi.moved { color: #e6b04d; }
+        .pl.edited::before, .pi.edited { color: #6aa6ff; }
+        .pl.orphan::before, .pi.orphan { color: #ff6a6a; }
+        .prose-row { border: 1px solid #33333a; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+        .prose-row .pr-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .prose-row .pi { font-weight: 600; }
+        .prose-row .pr-prev { color: #9a9aa6; margin-top: 4px; word-break: break-word; }
+        .prose-row .pr-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: #17171b; border-radius: 5px; }
+        .prose-row .spacer { flex: 1; }
+        /* [MP] 存档总览行 */
+        .arc-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 6px 10px; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 6px; }
+        .arc-row.cur { border-color: #6fcf7f; background: #16211a; }
+        .arc-row .arc-name { font-weight: 600; word-break: break-all; }
+        .arc-row .arc-bits { flex: 1; text-align: right; }
+        /* [MP] 注入落点标记线 */
+        .inject-marker { border: 1px dashed #e6b04d; background: #211d12; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+        .inject-marker .im-head { color: #f0c674; font-weight: 600; }
+        .inject-marker .im-sub { color: #9a9aa6; font-size: 12px; margin-top: 2px; }
+        .inject-marker .im-detail { margin-top: 6px; }
+        .inject-marker .im-detail summary { cursor: pointer; color: #c9c9d4; }
+        .inject-marker .im-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: #17171b; border-radius: 5px; max-height: 240px; overflow: auto; }
+
+        /* [MP] 侧边栏 + 视图切换 */
+        .menu-btn { font-size: 18px; line-height: 1; padding: 5px 11px; }
+        #sidebar {
+            position: fixed; top: 0; left: 0; bottom: 0; width: 232px; z-index: 30;
+            background: var(--panel); border-right: 1px solid var(--line);
+            transform: translateX(-100%); transition: transform .2s ease;
+            display: flex; flex-direction: column; gap: 3px; padding: 14px 10px; overflow: auto;
+        }
+        #sidebar.open { transform: translateX(0); }
+        #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20; display: none; }
+        #overlay.show { display: block; }
+        .nav-title { font-weight: 700; color: var(--accent); font-size: 18px; padding: 2px 8px 10px; }
+        .nav-item { text-align: left; width: 100%; background: transparent; border: none; padding: 11px 12px; border-radius: 6px; color: var(--ink); font-size: 15px; }
+        .nav-item.active { background: var(--panel2); color: var(--accent); font-weight: 600; }
+        @media (hover: hover) { .nav-item:hover:not(:disabled) { background: var(--panel2); } }
+        .nav-sep { height: 1px; background: var(--line); margin: 10px 6px; }
+        .nav-cap { font-size: 12px; color: var(--muted); padding: 2px 12px; }
+        .nav-spring { flex: 1; }
+        .nav-gear { color: var(--muted); }
+        .nav-item.sub { padding-left: 24px; font-size: 14px; color: var(--muted); }
+        .nav-item.sub.active { color: var(--accent); }
+        .tools-group { display: none; }
+        .tools-group.show { display: block; }
+        .icon-btn { font-size: 16px; line-height: 1; padding: 4px 9px; }
+
+        .view { display: none; }
+        .view.active { display: block; }
+
+        @media (min-width: 900px) {
+            #sidebar { transform: none; }
+            #overlay { display: none !important; }
+            .menu-btn { display: none; }
+            body { padding-left: 232px; }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <button id="btn-menu" class="menu-btn" title="菜单">☰</button>
+        <span class="title">蜜脾</span>
+        <span class="chatkey" id="chatkey">未定位</span>
+        <span><span class="dot off" id="bridgedot"></span> <span id="bridgetext" class="floor-meta">桥离线</span></span>
+        <div class="spacer"></div>
+        <button id="btn-refresh" class="icon-btn" title="刷新快照：重新从酒馆抓取当前聊天">⟳</button>
+        <span class="floor-meta" id="view-title">正文</span>
+        <input type="file" id="file-import" accept="application/json" style="display:none" />
+    </header>
+
+    <!-- [MP] 侧边栏导航 -->
+    <div id="overlay"></div>
+    <nav id="sidebar">
+        <div class="nav-title">蜜脾</div>
+        <button class="nav-item active" data-view="v-text">正文浏览</button>
+        <button class="nav-item" data-view="v-sum">总结</button>
+        <button class="nav-item" data-view="v-codex">信息档案</button>
+        <button class="nav-item" data-view="v-overview">存档总览</button>
+        <div class="nav-spring"></div>
+        <div id="tools-group" class="tools-group">
+            <button class="nav-item sub" data-view="v-settings">副API设置</button>
+            <button id="btn-export" class="nav-item sub" title="三表全量导出为JSON">导出全部</button>
+            <button id="btn-import" class="nav-item sub">导入</button>
+            <button id="btn-debug" class="nav-item sub" title="手机无控制台时看这里">调试日志</button>
+        </div>
+        <div class="nav-sep"></div>
+        <button id="btn-tools" class="nav-item nav-gear">⚙ 工具</button>
+    </nav>
+
+    <div class="dirty-banner" id="dirty">聊天数据已变化，点击刷新快照</div>
+
+    <!-- [MP] 正文浏览视图 -->
+    <section class="view active" id="v-text">
+    <div class="toolbar">
+        <label><input type="checkbox" id="f-ai" /> 只看AI楼</label>
+        <label><input type="checkbox" id="f-saved" /> 只看已存档</label>
+        <label>检索 <input type="text" id="f-kw" placeholder="关键字…" /></label>
+        <span class="floor-meta" id="stat"></span>
+    </div>
+
+    <main id="main">
+        <div class="empty">等待桥上线并定位聊天…</div>
+    </main>
+    </section>
+
+    <!-- [MP] 总结视图 -->
+    <section class="view panel" id="v-sum">
+        <div class="panel-head">
+            <span class="panel-title">总结区</span>
+            <span class="floor-meta" id="lastvol"></span>
+        </div>
+
+        <div class="summary-work">
+            <div class="srow inline">
+                <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
+                <label>结束楼 <input type="number" id="sum-end" min="0" style="width:80px" /></label>
+                <button class="primary" id="btn-gen">生成总结</button>
+                <span class="floor-meta" id="gen-stat"></span>
+            </div>
+            <textarea id="sum-result" rows="8" placeholder="生成的总结会出现在这里，可自行编辑后入库…"></textarea>
+            <div class="srow inline">
+                <button id="btn-save-summary" disabled>仅保存入库</button>
+                <button id="btn-apply" disabled title="把区间折叠成总结，改动酒馆真实存档(可逆)">保存并执行替换隐藏</button>
+            </div>
+        </div>
+
+        <div class="summary-history" id="sum-history"></div>
+
+        <details class="prompt-fold">
+            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
+            <textarea id="s-prompt" rows="6"></textarea>
+        </details>
+    </section>
+
+    <!-- [MP] 信息档案视图（第3期） -->
+    <section class="view panel" id="v-codex">
+        <div class="panel-head">
+            <span class="panel-title">信息档案</span>
+            <span class="floor-meta" id="codex-meta"></span>
+        </div>
+        <div class="srow inline">
+            <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
+            <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
+            <button class="primary" id="btn-codex-gen">AI更新档案</button>
+            <span class="floor-meta" id="codex-stat"></span>
+        </div>
+        <textarea id="codex-text" rows="12"
+            placeholder="信息档案：世界观 / 背景设定 / 角色状态…可手动编辑，或用上面的AI更新从区间原文提炼并入。"></textarea>
+        <div class="srow inline">
+            <button class="primary" id="btn-codex-save">保存档案</button>
+            <button id="btn-codex-revert" disabled title="还原到上一次AI更新/保存前的版本">还原上一版</button>
+        </div>
+        <div class="srow inline inject-row">
+            <label><input type="checkbox" id="inj-enabled" /> 开启注入（档案 + 最新一卷总结）</label>
+            <label>位置
+                <select id="inj-pos">
+                    <option value="1">聊天内深度</option>
+                    <option value="0">最前（故事后·聊天前）</option>
+                </select>
+            </label>
+            <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
+            <span class="floor-meta" id="inj-stat"></span>
+        </div>
+
+        <details class="prompt-fold">
+            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
+            <textarea id="s-codex-prompt" rows="6"></textarea>
+        </details>
+    </section>
+
+    <!-- [MP] 存档总览视图：先列各聊天各自的档，再展开当前聊天的正文明细 -->
+    <section class="view panel" id="v-overview">
+        <div class="panel-head">
+            <span class="panel-title">存档总览</span>
+            <span class="floor-meta" id="prose-meta"></span>
+        </div>
+        <div class="floor-meta" style="margin:4px 0 8px">你给以下酒馆聊天存过档，各归各家：</div>
+        <div id="archive-overview"></div>
+        <div class="panel-title" style="margin:14px 0 6px;font-size:13px">当前聊天的正文明细</div>
+        <div class="prose-legend floor-meta">
+            <span class="pl exact">对上·内容一致</span>
+            <span class="pl moved">位置变了</span>
+            <span class="pl edited">同楼·正文改过</span>
+            <span class="pl orphan">对不上·孤儿</span>
+        </div>
+        <div id="prose-list"></div>
+    </section>
+
+    <!-- [MP] 副API设置视图（从总结区搬出，工具里进入） -->
+    <section class="view panel" id="v-settings">
+        <div class="panel-head"><span class="panel-title">副API设置</span></div>
+        <div id="settings-box">
+            <div class="srow inline"><label>已存地址</label>
+                <select id="s-preset"></select>
+                <button id="btn-preset-new">新建地址</button>
+                <button id="btn-preset-del">删除此地址</button>
+            </div>
+            <div class="srow"><label>地址名称</label><input type="text" id="s-preset-name" placeholder="给这组地址起个名，如 主力" /></div>
+            <div class="srow"><label>接口模式</label>
+                <select id="s-source">
+                    <option value="openai">OpenAI</option>
+                    <option value="claude">Claude</option>
+                    <option value="custom">OpenAI兼容(自定义)</option>
+                </select>
+            </div>
+            <div class="srow"><label>apiurl（OpenAI兼容基址，如 /v1，不带 /chat/completions）</label><input type="text" id="s-apiurl" placeholder="https://your-api.example.com/v1" /></div>
+            <div class="srow"><label>key</label><input type="password" id="s-key" placeholder="API Key" /></div>
+            <div class="srow"><label>model</label><input type="text" id="s-model" placeholder="模型名，可手填或下方拉取" /></div>
+            <div class="srow inline"><button id="btn-pull-models">拉取模型</button>
+                <select id="s-model-pick"><option value="">（拉取后在此选择）</option></select>
+            </div>
+            <div class="srow"><label>生成方式</label>
+                <select id="s-stream">
+                    <option value="stream">流式（推荐·卡死15秒内自动重发·能看进度）</option>
+                    <option value="nostream">非流式（渠道不支持流式时用·卡了要等满一发）</option>
+                </select>
+            </div>
+            <div class="srow"><label>破限提示词（系统·所有请求通用，可留空）</label><textarea id="s-jailbreak" rows="6" placeholder="给副API的破限/越权系统提示，会加在总结和档案请求最前面。不需要就留空。"></textarea></div>
+            <div class="srow inline"><button class="primary" id="btn-save-settings">保存设置</button><button id="btn-test-api">测试连通</button><button id="btn-direct-test">直连测试</button></div>
+            <div id="api-status" class="api-status">状态：未测试</div>
+        </div>
+    </section>
+
+    <div id="toast"></div>
+
+    <!-- [MP] 手机无F12，屏内调试日志 -->
+    <div id="debugwrap">
+        <div id="debughead">
+            <span>调试日志</span>
+            <button id="debug-close" title="关闭日志" aria-label="关闭日志">✕</button>
+        </div>
+        <pre id="debuglog"></pre>
+    </div>
+
+    <script>
+        // [MP] ============ 通信层 ============
+        const CHANNEL = 'mellarium';
+
+        // [MP] 屏内调试日志（手机无控制台）
+        function dlog(msg, isErr) {
+            const el = document.getElementById('debuglog');
+            if (!el) return;
+            const d = new Date();
+            const t = d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+            const line = document.createElement('div');
+            if (isErr) line.className = 'err';
+            line.textContent = `${t}  ${msg}`;
+            el.appendChild(line);
+            el.scrollTop = el.scrollHeight;
+            while (el.childNodes.length > 200) el.removeChild(el.firstChild);
+        }
+        window.addEventListener('error', e => dlog('JS错误: ' + (e.message || e), true));
+        window.addEventListener('unhandledrejection', e => dlog('Promise错误: ' + (e.reason && e.reason.message || e.reason), true));
+        document.getElementById('btn-debug').onclick = () => {
+            document.getElementById('debugwrap').classList.toggle('show');
+            closeSidebar();  // [MP] 收起抽屉，日志才不被侧边栏挡
+        };
+        document.getElementById('debug-close').onclick = () => document.getElementById('debugwrap').classList.remove('show');
+
+        // [MP] 计时打点：mark('★x 描述') 打印距上一次 mpStart 的毫秒数，一次隐藏的时间轴摊屏上
+        let mpT0 = 0;
+        function mpStart(label) { mpT0 = performance.now(); dlog('★0 ' + label + '  (计时起点)'); }
+        function mpMark(label) {
+            const dt = mpT0 ? Math.round(performance.now() - mpT0) : 0;
+            dlog(label + '  +' + dt + 'ms');
+        }
+
+        const channel = new BroadcastChannel(CHANNEL);
+        let bridgeOnline = false;
+        let bridgeTimer = null;
+        let currentChatKey = null;
+        let snapshot = null; // {chatKey, messages[], count}
+
+        function post(type, payload) {
+            channel.postMessage({ type, chatKey: currentChatKey, payload: payload ?? null });
+        }
+
+        function markBridge(on) {
+            bridgeOnline = on;
+            document.getElementById('bridgedot').className = 'dot ' + (on ? 'on' : 'off');
+            document.getElementById('bridgetext').textContent = on ? '桥在线' : '桥离线';
+            document.getElementById('btn-refresh').disabled = !on;
+        }
+
+        function setChatKey(k) {
+            currentChatKey = k || null;
+            document.getElementById('chatkey').textContent = k || '未定位';
+        }
+
+        channel.onmessage = async (ev) => {
+            const msg = ev && ev.data;
+            if (!msg || typeof msg !== 'object') return;
+            dlog('收到桥消息: ' + msg.type + (msg.chatKey ? ' [' + msg.chatKey + ']' : ''));
+            switch (msg.type) {
+                case 'bridge-online':
+                case 'pong':
+                    markBridge(true);
+                    if (msg.chatKey) setChatKey(msg.chatKey);
+                    heartbeat();
+                    if (msg.chatKey && !snapshot) post('get-snapshot');
+                    break;
+                case 'chat-changed':
+                    markBridge(true);
+                    heartbeat();
+                    setChatKey(msg.chatKey);
+                    snapshot = null;
+                    hideDirty();
+                    post('get-snapshot'); // 切聊天自动定位
+                    break;
+                case 'chat-dirty':
+                    markBridge(true);
+                    heartbeat();
+                    showDirty();
+                    break;
+                case 'snapshot':
+                    markBridge(true);
+                    heartbeat();
+                    if (msg.payload) {
+                        mpMark('★4 兜底快照回来了（大聊天深拷贝＋跨iframe序列化耗时看这段）');
+                        snapshot = msg.payload;
+                        setChatKey(msg.payload.chatKey);
+                        hideDirty();
+                        await render();
+                        await renderCodex();            // [MP] 先载入本聊天档案（refreshInjection 要读框里的值）
+                        await renderSummaryHistory();   // [MP] 末尾会按需 refreshInjection
+                        mpMark('★5 快照render完成');
+                    }
+                    break;
+                case 'range-text':
+                    markBridge(true);
+                    heartbeat();
+                    onRangeText(msg.payload);
+                    break;
+                case 'summary':
+                    markBridge(true);
+                    heartbeat();
+                    onSummaryResult(msg.payload);
+                    break;
+                case 'test-result':
+                    markBridge(true);
+                    heartbeat();
+                    onTestResult(msg.payload);
+                    break;
+                case 'injection-result':
+                    markBridge(true);
+                    heartbeat();
+                    {
+                        const p = msg.payload || {};
+                        const el = document.getElementById('inj-stat');
+                        if (el) el.textContent = p.ok
+                            ? (p.enabled ? `注入已生效 · ${p.length}字 · 位置${p.position}深度${p.depth}` : '注入已清空')
+                            : ('注入失败：' + (p.message || '未知'));
+                    }
+                    break;
+                case 'models-result':
+                    markBridge(true);
+                    heartbeat();
+                    onModelsResult(msg.payload);
+                    break;
+                case 'apply-result':
+                    markBridge(true);
+                    heartbeat();
+                    await onApplyResult(msg.payload);
+                    break;
+                case 'revert-result':
+                    markBridge(true);
+                    heartbeat();
+                    await onRevertResult(msg.payload);
+                    break;
+                case 'bridge-debug':
+                    markBridge(true);
+                    heartbeat();
+                    mpMark('☆桥探针: ' + (msg.payload && msg.payload.message || ''));
+                    break;
+                case 'error':
+                    if (msg.payload && msg.payload.op === 'run-summary') {
+                        // [MP] 只认当前在等那一发的失败回包，僵尸失败直接丢
+                        if (msg.payload.reqId !== genReqId || genReqId === 0) {
+                            dlog('丢弃不匹配的 run-summary 失败回包 reqId=' + msg.payload.reqId + ' 期望=' + genReqId, true);
+                            break;
+                        }
+                        genReqId = 0;
+                        clearGen();
+                        document.getElementById('btn-gen').disabled = false;
+                        document.getElementById('gen-stat').textContent = '生成失败：' + (msg.payload.message || '未知');
+                    }
+                    toast('桥报错: ' + (msg.payload && msg.payload.message || '未知'));
+                    break;
+            }
+        };
+
+        // [MP] 心跳：收到桥任何消息刷新计时；超时判离线并重新ping
+        function heartbeat() {
+            if (bridgeTimer) clearTimeout(bridgeTimer);
+            bridgeTimer = setTimeout(() => { markBridge(false); dlog('桥4秒无消息，判离线并重新ping', true); post('ping'); }, 4000);
+        }
+
+        function showDirty() { document.getElementById('dirty').classList.add('show'); }
+        function hideDirty() { document.getElementById('dirty').classList.remove('show'); }
+
+        document.getElementById('dirty').onclick = () => { post('get-snapshot'); };
+        document.getElementById('btn-refresh').onclick = () => { post('get-snapshot'); };
+
+        // [MP] ============ IndexedDB ============
+        const DB_NAME = 'mellarium';
+        const DB_VER = 2;
+        let db = null;
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, DB_VER);
+                req.onupgradeneeded = (e) => {
+                    const d = e.target.result;
+                    if (!d.objectStoreNames.contains('prose')) {
+                        const s = d.createObjectStore('prose', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('chatKey', 'chatKey', { unique: false });
+                    }
+                    if (!d.objectStoreNames.contains('summaries')) {
+                        const s = d.createObjectStore('summaries', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('chatKey', 'chatKey', { unique: false });
+                    }
+                    if (!d.objectStoreNames.contains('codex')) {
+                        d.createObjectStore('codex', { keyPath: 'chatKey' });
+                    }
+                    if (!d.objectStoreNames.contains('settings')) {
+                        d.createObjectStore('settings', { keyPath: 'key' }); // [MP] 副API配置+提示词
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function tx(store, mode) { return db.transaction(store, mode).objectStore(store); }
+
+        function idbReq(r) {
+            return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+        }
+
+        async function proseForChat(chatKey) {
+            if (!db) return [];
+            const idx = tx('prose', 'readonly').index('chatKey');
+            return await idbReq(idx.getAll(IDBKeyRange.only(chatKey)));
+        }
+
+        async function addProse(rec) { return await idbReq(tx('prose', 'readwrite').add(rec)); }
+        async function delProse(id) { return await idbReq(tx('prose', 'readwrite').delete(id)); }
+        async function getAll(store) { return db ? await idbReq(tx(store, 'readonly').getAll()) : []; }
+
+        // [MP] ============ 设置 + 总结 ============
+        const DEFAULT_SUMMARY_PROMPT =
+            '你是剧情总结助手。下面「用户输入」是一段共写小说的原文（含多个楼层，格式【N楼·角色名】正文）。' +
+            '请把它压缩成一份剧情总结，严格遵守：\n' +
+            '1. 按时间先后顺序叙述已经发生的事实，不加任何评论、感想或推测。\n' +
+            '2. 若原文含章节标题，总结开头以「标题:原文标题」逐字保留该标题。\n' +
+            '3. 人物一律用原名，不用代称（他/她/那个男人等）。\n' +
+            '4. 保留关键情节、转折、人物关系与状态变化；删去纯对话铺陈与文学修饰。\n' +
+            '5. 只输出总结正文本身，不要输出楼层号标记、不要加解释或前后缀。';
+
+        // [MP] 档案更新提示词（第3期）。输入=现有档案全文+新区间原文，输出=更新后的完整档案。
+        const DEFAULT_CODEX_PROMPT =
+            '你是设定档案维护助手。「用户输入」含两部分：【现有档案】是已有的设定文档，【新增区间原文】是一段共写小说的新原文。' +
+            '请依据新原文更新档案，输出更新后的【完整档案】，严格遵守：\n' +
+            '1. 保持原有分节结构（如 世界观 / 背景设定 / 角色状态 等小标题），没有档案时自行按此分节新建。\n' +
+            '2. 已有信息除非被新剧情明确推翻，否则原样保留；有变化则更新，有新增则并入。\n' +
+            '3. 角色状态记录：外貌变化、伤势、掌握的秘密、知情状态、关系进展。动物与宠物同样计入，名字后标注(宠物)。\n' +
+            '4. 人物一律用原名，不用代称。只记已发生的设定事实，不加评论或推测。\n' +
+            '5. 输出完整文档本身，不要输出增量、不要加解释或前后缀、不要保留【现有档案】【新增区间原文】这类输入标记。';
+
+        async function getSetting(key, dflt) {
+            if (!db) return dflt;
+            const r = await idbReq(tx('settings', 'readonly').get(key));
+            return r ? r.value : dflt;
+        }
+        async function putSetting(key, value) { return await idbReq(tx('settings', 'readwrite').put({ key, value })); }
+
+        // [MP] 醒目状态条：state ∈ '', 'busy', 'ok', 'err'
+        function setApiStatus(state, text) {
+            const el = document.getElementById('api-status');
+            el.className = 'api-status' + (state ? ' ' + state : '');
+            el.textContent = '状态：' + text;
+        }
+
+        function apiConfigFromUI() {
+            return {
+                apiurl: document.getElementById('s-apiurl').value.trim(),
+                key: document.getElementById('s-key').value,
+                model: document.getElementById('s-model').value.trim(),
+                source: document.getElementById('s-source').value || 'openai',
+                stream: document.getElementById('s-stream').value !== 'nostream', // [MP] 默认流式
+                jailbreak: document.getElementById('s-jailbreak').value || '',     // [MP] 破限系统提示，加在最前
+            };
+        }
+
+        // [MP] ===== 多地址预设 =====
+        // apiPresets: [{name, source, apiurl, key, model}]，存 settings 键 'apiPresets'；当前项存 'activePresetIdx'
+        let apiPresets = [];
+        let activeIdx = 0;
+
+        function fillFieldsFromPreset(p) {
+            p = p || {};
+            document.getElementById('s-preset-name').value = p.name || '';
+            document.getElementById('s-source').value = p.source || 'openai';
+            document.getElementById('s-apiurl').value = p.apiurl || '';
+            document.getElementById('s-key').value = p.key || '';
+            document.getElementById('s-model').value = p.model || '';
+            document.getElementById('s-stream').value = (p.stream === false) ? 'nostream' : 'stream'; // [MP] 默认流式
+        }
+
+        function readFieldsToPreset() {
+            return {
+                name: document.getElementById('s-preset-name').value.trim() || ('地址' + (activeIdx + 1)),
+                source: document.getElementById('s-source').value || 'openai',
+                apiurl: document.getElementById('s-apiurl').value.trim(),
+                key: document.getElementById('s-key').value,
+                model: document.getElementById('s-model').value.trim(),
+                stream: document.getElementById('s-stream').value !== 'nostream', // [MP] 默认流式
+            };
+        }
+
+        function renderPresetSelect() {
+            const sel = document.getElementById('s-preset');
+            sel.innerHTML = '';
+            apiPresets.forEach((p, i) => {
+                const o = document.createElement('option');
+                o.value = String(i);
+                o.textContent = p.name || ('地址' + (i + 1));
+                sel.appendChild(o);
+            });
+            sel.value = String(activeIdx);
+        }
+
+        async function persistPresets() {
+            await putSetting('apiPresets', apiPresets);
+            await putSetting('activePresetIdx', activeIdx);
+        }
+
+        async function loadSettings() {
+            apiPresets = await getSetting('apiPresets', null);
+            if (!Array.isArray(apiPresets) || !apiPresets.length) {
+                // 迁移旧的扁平单组配置；没有就建一个空地址
+                const oldUrl = await getSetting('apiurl', '');
+                apiPresets = [{
+                    name: oldUrl ? '默认' : '地址1',
+                    source: await getSetting('source', 'openai'),
+                    apiurl: oldUrl,
+                    key: await getSetting('key', ''),
+                    model: await getSetting('model', ''),
+                }];
+            }
+            activeIdx = await getSetting('activePresetIdx', 0);
+            if (activeIdx < 0 || activeIdx >= apiPresets.length) activeIdx = 0;
+            renderPresetSelect();
+            fillFieldsFromPreset(apiPresets[activeIdx]);
+            document.getElementById('s-prompt').value = await getSetting('summaryPrompt', DEFAULT_SUMMARY_PROMPT);
+            document.getElementById('s-codex-prompt').value = await getSetting('codexPrompt', DEFAULT_CODEX_PROMPT);
+            document.getElementById('s-jailbreak').value = await getSetting('jailbreakPrompt', '');
+            // [MP] 注入设置（全局，不分聊天）：开关/位置/深度
+            injEnabled = await getSetting('injEnabled', false);
+            injPos = await getSetting('injPos', 1);
+            injDepth = await getSetting('injDepth', 4);
+            document.getElementById('inj-enabled').checked = !!injEnabled;
+            document.getElementById('inj-pos').value = String(injPos);
+            document.getElementById('inj-depth').value = String(injDepth);
+        }
+
+
+        // 切换已存地址：把当前填的字段先存回当前地址，再切过去载入目标
+        document.getElementById('s-preset').onchange = async (e) => {
+            apiPresets[activeIdx] = readFieldsToPreset();
+            activeIdx = parseInt(e.target.value, 10) || 0;
+            fillFieldsFromPreset(apiPresets[activeIdx]);
+            renderPresetSelect();
+            await persistPresets();
+        };
+
+        document.getElementById('btn-preset-new').onclick = async () => {
+            apiPresets[activeIdx] = readFieldsToPreset();
+            apiPresets.push({ name: '地址' + (apiPresets.length + 1), source: 'openai', apiurl: '', key: '', model: '' });
+            activeIdx = apiPresets.length - 1;
+            renderPresetSelect();
+            fillFieldsFromPreset(apiPresets[activeIdx]);
+            await persistPresets();
+            toast('已新建地址，填完点保存');
+        };
+
+        document.getElementById('btn-preset-del').onclick = async () => {
+            if (apiPresets.length <= 1) { toast('至少保留一个地址'); return; }
+            const name = apiPresets[activeIdx].name;
+            apiPresets.splice(activeIdx, 1);
+            if (activeIdx >= apiPresets.length) activeIdx = apiPresets.length - 1;
+            renderPresetSelect();
+            fillFieldsFromPreset(apiPresets[activeIdx]);
+            await persistPresets();
+            toast('已删除地址：' + name);
+        };
+
+        document.getElementById('btn-save-settings').onclick = async () => {
+            apiPresets[activeIdx] = readFieldsToPreset();
+            renderPresetSelect();
+            await persistPresets();
+            await putSetting('jailbreakPrompt', document.getElementById('s-jailbreak').value);
+            toast('已保存到地址：' + apiPresets[activeIdx].name);
+        };
+
+        // [MP] 总结/档案提示词已挪到各自视图，改完即存（无需按钮）
+        document.getElementById('s-prompt').addEventListener('change', async (e) => {
+            await putSetting('summaryPrompt', e.target.value); toast('总结提示词已保存');
+        });
+        document.getElementById('s-codex-prompt').addEventListener('change', async (e) => {
+            await putSetting('codexPrompt', e.target.value); toast('档案提示词已保存');
+        });
+
+        // [MP] 选中拉取到的模型 → 回填model输入框
+        document.getElementById('s-model-pick').onchange = (e) => {
+            if (e.target.value) document.getElementById('s-model').value = e.target.value;
+        };
+
+        let testTimer = null, modelsTimer = null;
+
+        // [MP] 桥测试改走前台同源后端（和总结同一条路），不再经会被手机冻住的酒馆标签页
+        document.getElementById('btn-test-api').onclick = async () => {
+            const cfg = apiConfigFromUI();
+            if (!cfg.apiurl || !cfg.model) { setApiStatus('err', '先填 apiurl 和 model'); return; }
+            document.getElementById('btn-test-api').disabled = true;
+            setApiStatus('busy', '测试中…（前台直发·和总结同一条路·最多20秒）');
+            dlog('前台测试 source=' + cfg.source);
+            try {
+                const token = await getCsrfToken();
+                const reply = await vaultSummarizeOnce('', '在吗？随便回一个字。', { ...cfg, maxTokens: 16 }, token, 20000, '桥测试');
+                setApiStatus('ok', '连通 ✓ 模型回复：' + (textPrefix80(reply || '') || '(空)'));
+                dlog('前台测试连通: ' + textPrefix80(reply || ''));
+            } catch (e) {
+                const msg = (e && e._to) ? '超时·20秒没回（这一发挂了，再点一次多半就通）' : (e && e.message || e);
+                setApiStatus('err', '失败 ✗ ' + msg);
+                dlog('前台测试失败: ' + msg, true);
+            } finally {
+                document.getElementById('btn-test-api').disabled = false;
+            }
+        };
+
+        function onTestResult(payload) {
+            // [MP] 保留：万一还有旧桥回 test-result，也不炸
+            if (testTimer) { clearTimeout(testTimer); testTimer = null; }
+            document.getElementById('btn-test-api').disabled = false;
+            if (payload && payload.ok) {
+                setApiStatus('ok', '连通 ✓ 模型回复：' + (textPrefix80(payload.text || '') || '(空)'));
+            } else {
+                setApiStatus('err', '失败 ✗ ' + (payload && payload.message || '未知'));
+            }
+        }
+
+        // [MP] 直连测试：vault 直接 fetch 副API，不经桥/酒馆。Clewdr 等放行CORS的反代可成；官方裸端点会被浏览器跨域挡
+        function joinUrl(base, path) { return String(base || '').replace(/\/+$/, '') + path; }
+
+        document.getElementById('btn-direct-test').onclick = async () => {
+            const cfg = apiConfigFromUI();
+            if (!cfg.apiurl || !cfg.model) { setApiStatus('err', '先填 apiurl 和 model'); return; }
+            document.getElementById('btn-direct-test').disabled = true;
+            setApiStatus('busy', '直连测试中…（不走酒馆，vault直接连副API）');
+            dlog('直连 fetch source=' + cfg.source);
+            try {
+                let url, headers, body;
+                if (cfg.source === 'claude') {
+                    url = joinUrl(cfg.apiurl, '/messages');
+                    headers = { 'Content-Type': 'application/json', 'x-api-key': cfg.key || '', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+                    body = { model: cfg.model, max_tokens: 16, messages: [{ role: 'user', content: '在吗' }] };
+                } else {
+                    url = joinUrl(cfg.apiurl, '/chat/completions');
+                    headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (cfg.key || '') };
+                    body = { model: cfg.model, max_tokens: 16, stream: false, messages: [{ role: 'user', content: '在吗' }] };
+                }
+                const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+                const txt = await resp.text();
+                if (!resp.ok) { setApiStatus('err', '直连 HTTP ' + resp.status + ' · ' + textPrefix80(txt)); dlog('直连HTTP错误 ' + resp.status + ' ' + textPrefix80(txt), true); return; }
+                let reply = '';
+                try {
+                    const j = JSON.parse(txt);
+                    const ch = j.choices && j.choices[0];
+                    reply = (ch && ch.message && ch.message.content) || (ch && ch.text) ||
+                        (Array.isArray(j.content) ? j.content.map(c => c && c.text || '').join('') : '') || '';
+                } catch (e) { reply = textPrefix80(txt); }
+                setApiStatus('ok', '直连成功 ✓ 模型回复：' + (textPrefix80(reply) || '(空)'));
+                dlog('直连成功: ' + textPrefix80(reply));
+            } catch (e) {
+                setApiStatus('err', '直连失败 ✗ ' + (e && e.message || e) + '（TypeError多半是跨域被挡或地址不通；此副API可能不放行CORS）');
+                dlog('直连异常: ' + (e && e.message || e), true);
+            } finally {
+                document.getElementById('btn-direct-test').disabled = false;
+            }
+        };
+
+        document.getElementById('btn-pull-models').onclick = () => {
+            if (!bridgeOnline) { setApiStatus('err', '桥离线，无法拉取（先刷新酒馆标签页）'); return; }
+            const cfg = apiConfigFromUI();
+            if (!cfg.apiurl) { setApiStatus('err', '先填 apiurl'); return; }
+            document.getElementById('btn-pull-models').disabled = true;
+            setApiStatus('busy', '拉取模型中…（最多等45秒）');
+            dlog('发 get-models');
+            post('get-models', { apiConfig: cfg });
+            if (modelsTimer) clearTimeout(modelsTimer);
+            modelsTimer = setTimeout(() => {
+                document.getElementById('btn-pull-models').disabled = false;
+                setApiStatus('err', '拉取超时·桥没回话（酒馆标签页可能没刷新加载新桥）');
+                dlog('get-models 45秒无应答', true);
+            }, 45000);
+        };
+
+        function onModelsResult(payload) {
+            if (modelsTimer) { clearTimeout(modelsTimer); modelsTimer = null; }
+            document.getElementById('btn-pull-models').disabled = false;
+            const sel = document.getElementById('s-model-pick');
+            if (payload && payload.ok && Array.isArray(payload.models)) {
+                sel.innerHTML = '<option value="">（共' + payload.models.length + '个，选一个）</option>';
+                payload.models.forEach(m => {
+                    const o = document.createElement('option');
+                    o.value = m; o.textContent = m; sel.appendChild(o);
+                });
+                setApiStatus('ok', '拉到 ' + payload.models.length + ' 个模型，点上面下拉选');
+                dlog('拉到模型 ' + payload.models.length + ' 个');
+            } else {
+                setApiStatus('err', '拉取失败 ✗ ' + (payload && payload.message || '未知'));
+                dlog('拉取模型失败: ' + (payload && payload.message || '未知'), true);
+            }
+        }
+
+        let pendingSummary = null; // {rangeStart, rangeEnd, text}
+        let genTimer = null; // [MP] 生成超时兜底
+        let genTick = null;  // [MP] 生成中秒数计数器（非流式看不见进度，给个跳动的秒数）
+        let genReqSeq = 0;   // [MP] 生成请求自增号
+        let genReqId = 0;    // [MP] 当前在等的那一发的号；回包 reqId 不等于它就丢（防僵尸请求诈尸）
+        let genPhase = null; // [MP] 'range'=正问桥要原文 / 'gen'=网页自己在发总结请求
+        let genCfg = null, genPrompt = ''; // [MP] 暂存本次生成的副API配置与提示词，等原文回来第二阶段用
+        function clearGen() {
+            if (genTimer) { clearTimeout(genTimer); genTimer = null; }
+            if (genTick) { clearInterval(genTick); genTick = null; }
+        }
+
+        // [MP] 生成两阶段：①问桥要区间原文（秒回的短活，桥就算在后台也顶得住）②网页自己直连副API发总结
+        //      长请求留在前台网页发，手机切来切去都不会把它冻死；桥只干读原文这种一秒钟的活。
+        document.getElementById('btn-gen').onclick = () => {
+            if (genReqId !== 0) { toast('已有一段在生成中，等它回来或超时再点'); return; } // [MP] 在飞就别再发
+            if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
+            const rs = parseInt(document.getElementById('sum-start').value, 10);
+            const re = parseInt(document.getElementById('sum-end').value, 10);
+            if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
+            const cfg = apiConfigFromUI();
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); setView('v-settings'); return; }
+            const reqId = ++genReqSeq;
+            genReqId = reqId;                 // [MP] 记下这一发的号，只认它的回包
+            genPhase = 'range';               // [MP] 第一阶段：等桥给原文
+            genCfg = cfg;
+            genPrompt = document.getElementById('s-prompt').value || DEFAULT_SUMMARY_PROMPT;
+            document.getElementById('btn-gen').disabled = true;
+            dlog(`发 get-range-text ${rs}~${re} #${reqId}`);
+            clearGen();
+            document.getElementById('gen-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
+            // [MP] 只给取原文 20 秒；桥要是被手机冻住不回，就提示切回酒馆标签页唤醒
+            genTimer = setTimeout(() => {
+                if (genReqId !== reqId || genPhase !== 'range') return;
+                clearGen(); genReqId = 0; genPhase = null;
+                document.getElementById('btn-gen').disabled = false;
+                document.getElementById('gen-stat').textContent = '桥没回原文（酒馆标签页可能被手机冻结了）：切回酒馆标签页停一下再回来重点生成';
+                dlog('get-range-text 20秒没回，疑似桥标签页被冻', true);
+            }, 20000);
+            post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+        };
+
+        // [MP] 第二阶段：原文回来了，网页自己直连酒馆后端发总结（前台，永不被冻）
+        async function onRangeText(payload) {
+            // [MP] 同一条 get-range-text 通道，档案更新的回包（reqId 命中 codexReqId）分流到档案处理
+            if (payload && payload.reqId === codexReqId && codexReqId !== 0) { return onCodexRangeText(payload); }
+            if (!payload || payload.reqId !== genReqId || genReqId === 0) {
+                dlog('丢弃不匹配的 range-text reqId=' + (payload && payload.reqId) + ' 期望=' + genReqId, true);
+                return;
+            }
+            if (payload.ok === false) {
+                clearGen(); genReqId = 0; genPhase = null;
+                document.getElementById('btn-gen').disabled = false;
+                document.getElementById('gen-stat').textContent = '取原文失败：' + (payload.message || '未知');
+                dlog('range-text 失败: ' + (payload.message || '未知'), true);
+                return;
+            }
+            const reqId = payload.reqId;
+            clearGen();                        // [MP] 清掉取原文的 20s 兜底
+            genPhase = 'gen';
+            const useStream = genCfg && genCfg.stream !== false;
+            let sec = 0;
+            const sumBox = document.getElementById('sum-result');
+            if (useStream) {
+                document.getElementById('gen-stat').textContent = '生成中…（流式·前台不冻·15秒不吐字就自动换一发）';
+                sumBox.value = '';                 // [MP] 流式开始前清空总结栏，正文直接往里灌
+                // [MP] 流式靠 onProgress 刷进度，不另开秒表计时器
+            } else {
+                document.getElementById('gen-stat').textContent = '生成中… 0s（非流式·前台不冻·每发80秒卡了自动重试）';
+                genTick = setInterval(() => {
+                    sec++;
+                    document.getElementById('gen-stat').textContent = `生成中… ${sec}s（非流式·前台不冻·每发80秒卡了自动重试）`;
+                }, 1000);
+            }
+            const onProgress = useStream ? (txt) => {
+                if (genReqId !== reqId) return;
+                const s = String(txt || '');
+                // [MP] 正文实时写进总结栏，让 Miel 看着它一段段长出来
+                sumBox.value = s;
+                sumBox.scrollTop = sumBox.scrollHeight;
+                document.getElementById('gen-stat').textContent = `生成中… 已收 ${s.length} 字`;
+            } : null;
+            dlog('原文' + String(payload.text || '').length + '字到手，网页开始' + (useStream ? '流式' : '非流式') + '直发总结 #' + reqId);
+            try {
+                const text = await vaultSummarize(genPrompt, payload.text, genCfg, onProgress);
+                if (genReqId !== reqId) { dlog('总结回来但已不是当前请求，丢弃 #' + reqId, true); return; }
+                onSummaryResult({ reqId, rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text });
+            } catch (e) {
+                if (genReqId !== reqId) { dlog('总结失败但已不是当前请求，忽略 #' + reqId, true); return; }
+                clearGen(); genReqId = 0; genPhase = null;
+                document.getElementById('btn-gen').disabled = false;
+                document.getElementById('gen-stat').textContent = '生成失败：' + (e && e.message || e);
+                dlog('网页直发总结失败: ' + (e && e.message || e), true);
+                toast('生成失败: ' + (e && e.message || e));
+            }
+        }
+
+        // [MP] 网页直连酒馆后端 /api/backends/chat-completions/generate。
+        //      同源 + 浏览器自带 basic auth，只差一个 CSRF token；每次现取，稳。
+        async function getCsrfToken() {
+            const r = await fetch('/csrf-token', { cache: 'no-cache' });
+            if (!r.ok) throw new Error('取CSRF失败 HTTP ' + r.status);
+            const j = await r.json();
+            return j && j.token;
+        }
+        // 单发：照抄 ChatCompletionService 的请求体（那套已验证能通），带真能掐的超时
+        async function vaultSummarizeOnce(sysPrompt, srcText, cfg, token, timeoutMs, tag) {
+            const base = String(cfg.apiurl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+            const sysMsg = [String(cfg.jailbreak || '').trim(), String(sysPrompt || '').trim()].filter(Boolean).join('\n\n');
+            const body = {
+                stream: false,
+                messages: [
+                    { role: 'system', content: sysMsg },
+                    { role: 'user', content: String(srcText || '') },
+                ],
+                model: cfg.model,
+                chat_completion_source: 'openai',
+                max_tokens: Number(cfg.maxTokens) > 0 ? Number(cfg.maxTokens) : 8192,
+                reverse_proxy: base,
+                proxy_password: cfg.key || '',
+                use_sysprompt: true,
+            };
+            const controller = new AbortController();
+            let timedOut = false;
+            const timer = setTimeout(() => { timedOut = true; try { controller.abort(); } catch (e) {} }, timeoutMs);
+            const t0 = Date.now();
+            try {
+                const resp = await fetch('/api/backends/chat-completions/generate', {
+                    method: 'POST', cache: 'no-cache',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+                let json = {};
+                try { json = await resp.json(); } catch (e) { json = {}; }
+                if (!resp.ok || (json && json.error)) {
+                    throw new Error((json && json.error && json.error.message) || ('HTTP ' + resp.status));
+                }
+                const content = (json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content)
+                    || (json && json.content) || '';
+                dlog(tag + ' 返回 耗时' + ((Date.now() - t0) / 1000).toFixed(1) + '秒 长度=' + String(content || '').length);
+                return content;
+            } catch (e) {
+                if (timedOut) { const te = new Error('TIMEOUT'); te._to = true; throw te; }
+                throw e;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+        // [MP] 流式单发：健康请求几秒内开始吐字，干挂的一个字都不吐。
+        //      看门狗：firstMs 内不吐第一个字，或吐字后 idleMs 没新字，就判卡死掐掉重发。
+        async function vaultSummarizeStreamOnce(sysPrompt, srcText, cfg, token, firstMs, idleMs, onProgress, tag) {
+            const base = String(cfg.apiurl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+            const sysMsg = [String(cfg.jailbreak || '').trim(), String(sysPrompt || '').trim()].filter(Boolean).join('\n\n');
+            const body = {
+                stream: true,
+                messages: [
+                    { role: 'system', content: sysMsg },
+                    { role: 'user', content: String(srcText || '') },
+                ],
+                model: cfg.model,
+                chat_completion_source: 'openai',
+                max_tokens: Number(cfg.maxTokens) > 0 ? Number(cfg.maxTokens) : 8192,
+                reverse_proxy: base,
+                proxy_password: cfg.key || '',
+                use_sysprompt: true,
+            };
+            const controller = new AbortController();
+            let got = false;
+            let watchdog = setTimeout(() => { try { controller.abort(); } catch (e) {} }, firstMs); // 首字看门狗
+            const rearm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => { try { controller.abort(); } catch (e) {} }, idleMs); };
+            const t0 = Date.now();
+            let text = '';
+            try {
+                const resp = await fetch('/api/backends/chat-completions/generate', {
+                    method: 'POST', cache: 'no-cache',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+                if (!resp.ok) {
+                    let t = ''; try { t = await resp.text(); } catch (e) {}
+                    throw new Error('HTTP ' + resp.status + ' ' + String(t).slice(0, 120));
+                }
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buf = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += decoder.decode(value, { stream: true });
+                    let nl;
+                    while ((nl = buf.indexOf('\n')) >= 0) {
+                        let line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+                        line = line.trim();
+                        if (!line || line.startsWith(':')) continue;
+                        if (!line.startsWith('data:')) continue;
+                        const data = line.slice(5).trim();
+                        if (data === '[DONE]') continue;
+                        let piece = '';
+                        try {
+                            const j = JSON.parse(data);
+                            const ch = j.choices && j.choices[0];
+                            piece = (ch && ch.delta && ch.delta.content) || (ch && ch.text) || j.content || '';
+                        } catch (e) { /* 半截 JSON，忽略 */ }
+                        if (piece) {
+                            got = true;
+                            text += piece;
+                            rearm();
+                            if (onProgress) { try { onProgress(text); } catch (e) {} }
+                        }
+                    }
+                }
+                dlog(tag + ' 流式完 耗时' + ((Date.now() - t0) / 1000).toFixed(1) + '秒 长度=' + text.length);
+                return text;
+            } catch (e) {
+                if (controller.signal.aborted) {
+                    const te = new Error(got ? '吐字中途卡住' : (Math.round(firstMs / 1000) + '秒不吐字')); te._to = true; throw te;
+                }
+                throw e;
+            } finally {
+                clearTimeout(watchdog);
+            }
+        }
+
+        // [MP] 流式/非流式 + 卡死重试 + 空回重试的统一入口
+        async function vaultSummarize(sysPrompt, srcText, cfg, onProgress) {
+            const useStream = cfg && cfg.stream !== false;
+            const tries = 3;
+            const token = await getCsrfToken();
+            let lastMsg = '未知';
+            for (let i = 0; i < tries; i++) {
+                try {
+                    const out = useStream
+                        ? await vaultSummarizeStreamOnce(sysPrompt, srcText, cfg, token, 15000, 30000, onProgress, '流第' + (i + 1) + '发')
+                        : await vaultSummarizeOnce(sysPrompt, srcText, cfg, token, 80000, '第' + (i + 1) + '发');
+                    if (out && String(out).trim()) return out;
+                    lastMsg = '空回'; // [MP] 200 但没正文，多半上游抽风，换一发
+                    dlog('第' + (i + 1) + '发空回，换一发');
+                    continue;
+                } catch (e) {
+                    if (e && e._to) { lastMsg = String(e.message || '卡死'); dlog('第' + (i + 1) + '发卡死(' + lastMsg + ')，换一发'); continue; }
+                    throw e; // HTTP/CORS 这类硬错，重试也白搭，直接抛
+                }
+            }
+            throw new Error('连着' + tries + '发都没成（' + lastMsg + '）：缩小区间，或换个渠道/切非流式再试');
+        }
+
+        function onSummaryResult(payload) {
+            // [MP] 配对：只认当前在等的那一发；对不上（僵尸/过期回包）直接丢，不清状态不填框
+            if (!payload || payload.reqId !== genReqId || genReqId === 0) {
+                dlog('丢弃不匹配的 summary 回包 reqId=' + (payload && payload.reqId) + ' 期望=' + genReqId, true);
+                return;
+            }
+            genReqId = 0;
+            genPhase = null;
+            clearGen();
+            document.getElementById('btn-gen').disabled = false;
+            if (!payload || typeof payload.text !== 'string') { document.getElementById('gen-stat').textContent = '返回为空'; return; }
+            dlog('收到 summary 长度=' + payload.text.length);
+            if (!payload.text.trim()) {
+                document.getElementById('gen-stat').textContent = '副API返回空内容（模型没吐正文，多半被拒/过滤或思考模型）';
+                dlog('summary 为空白', true);
+                return;
+            }
+            pendingSummary = { rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text: payload.text };
+            document.getElementById('sum-result').value = payload.text;
+            document.getElementById('gen-stat').textContent = `已生成 ${payload.rangeStart}~${payload.rangeEnd}，可编辑`;
+            document.getElementById('btn-save-summary').disabled = false;
+            document.getElementById('btn-apply').disabled = false;
+        }
+
+        async function summariesForChat(chatKey) {
+            if (!db) return [];
+            const idx = tx('summaries', 'readonly').index('chatKey');
+            const rows = await idbReq(idx.getAll(IDBKeyRange.only(chatKey)));
+            rows.sort((a, b) => a.volume - b.volume);
+            return rows;
+        }
+
+        // [MP] 入库一条总结，返回 {id, volume}；applied 标记是否已执行替换
+        async function saveSummaryRow(text, rs, re, applied) {
+            const existing = await summariesForChat(currentChatKey);
+            const volume = (existing.reduce((mx, r) => Math.max(mx, r.volume || 0), 0)) + 1;
+            const id = await idbReq(tx('summaries', 'readwrite').add({
+                chatKey: currentChatKey,
+                volume, rangeStart: rs, rangeEnd: re,
+                summaryText: text, applied: !!applied,
+                createdAt: new Date().toISOString(),
+            }));
+            return { id, volume };
+        }
+
+        let saveBusy = false; // [MP] 防手机连点重入
+        document.getElementById('btn-save-summary').onclick = async () => {
+            if (saveBusy) return;
+            saveBusy = true;
+            try {
+                if (!currentChatKey) { toast('未定位聊天'); return; }
+                const text = document.getElementById('sum-result').value.trim();
+                if (!text) { toast('总结为空'); return; }
+                const rs = parseInt(document.getElementById('sum-start').value, 10);
+                const re = parseInt(document.getElementById('sum-end').value, 10);
+                const { volume } = await saveSummaryRow(text, rs, re, false);
+                toast(`已入库 第${volume}卷`);
+                // [MP] 入库后清空总结框＋待存态，界面自己说话，不用盯着猜更没更新
+                document.getElementById('sum-result').value = '';
+                pendingSummary = null;
+                document.getElementById('btn-save-summary').disabled = true;
+                document.getElementById('btn-apply').disabled = true;
+                document.getElementById('gen-stat').textContent = `已入库 第${volume}卷 ✓ 总结框已清空，可继续下一段`;
+                await renderSummaryHistory();
+            } finally { saveBusy = false; }
+        };
+
+        // [MP] 保存并执行替换隐藏：入库→发桥改真实存档→回执后标记 applied 并刷新
+        let applyPending = null; // {id, volume, rs, re}
+        let applyBusy = false; // [MP] 防手机连点重入：进函数先上锁
+        document.getElementById('btn-apply').onclick = async () => {
+            if (applyBusy) return;
+            applyBusy = true;
+            try {
+                if (!bridgeOnline) { toast('桥离线，无法替换'); return; }
+                if (!currentChatKey) { toast('未定位聊天'); return; }
+                const text = document.getElementById('sum-result').value.trim();
+                if (!text) { toast('总结为空，先生成'); return; }
+                const rs = parseInt(document.getElementById('sum-start').value, 10);
+                const re = parseInt(document.getElementById('sum-end').value, 10);
+                if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
+                if (!confirm(
+                    `确认执行替换隐藏？\n\n` +
+                    `· ${rs}~${re} 楼将折叠为一条总结\n` +
+                    `· 总结写成第 ${re} 楼的新版本\n` +
+                    `· ${rs}~${re - 1} 楼将被隐藏，不再进提示词\n\n` +
+                    `会改动酒馆真实存档，但可逆：随时点这一卷的【还原正文】即可一键撤销。`)) return;
+                const { id, volume } = await saveSummaryRow(text, rs, re, false);
+                document.getElementById('btn-apply').disabled = true;
+                document.getElementById('gen-stat').textContent = `执行替换隐藏中… 第${volume}卷`;
+                mpStart(`发 apply-replace ${rs}~${re} 第${volume}卷`);
+                // [MP] 点击即刻本地刷新：用手里已有的数据当场把界面画成隐藏后的样子，
+                // 不等桥回执。手机浏览器会把 iframe 事件循环节流到分钟级，等桥→iframe 的回执＝等分钟。
+                // 同时记下回滚所需的原状，桥要是失败就把界面撤回去。
+                let prevAnchor = null, hidNow = [];
+                if (snapshot && Array.isArray(snapshot.messages)) {
+                    for (let i = rs; i <= re - 1; i++) {
+                        const mm = snapshot.messages[i];
+                        if (mm && !mm.is_system) { mm.is_system = true; hidNow.push(i); }
+                    }
+                    const anchor = snapshot.messages[re];
+                    if (anchor) {
+                        if (!Array.isArray(anchor.swipes)) anchor.swipes = [anchor.mes || ''];
+                        prevAnchor = { mes: anchor.mes, swipes: anchor.swipes.slice(), swipeId: anchor.swipeId };
+                        const summaryMes = `【前文剧情总结·第${volume}卷】\n` + text;
+                        anchor.swipes.push(summaryMes);
+                        anchor.swipeId = anchor.swipes.length - 1;
+                        anchor.mes = summaryMes;
+                    }
+                    await render();
+                    mpMark('★本地即刻render完成（点击即变，不等桥）');
+                }
+                applyPending = { id, volume, rs, re, prevAnchor, hidNow };
+                post('apply-replace', { rangeStart: rs, rangeEnd: re, summaryText: text, volume });
+            } finally { applyBusy = false; }
+        };
+
+        async function onApplyResult(payload) {
+            mpMark('★1 桥回执 apply-result 到手');
+            document.getElementById('btn-apply').disabled = false;
+            if (!payload || !payload.ok) {
+                const m = payload && payload.message || '未知错误';
+                toast('替换失败：' + m);
+                document.getElementById('gen-stat').textContent = '替换失败：' + m;
+                dlog('apply-replace 失败: ' + m, true);
+                return;
+            }
+            // 标记该卷已替换，并存下还原所需的原文/隐藏楼
+            if (applyPending && applyPending.id != null) {
+                try {
+                    const row = await idbReq(tx('summaries', 'readonly').get(applyPending.id));
+                    if (row) {
+                        row.applied = true;
+                        row.revert = {
+                            origMes: payload.origMes,
+                            origSwipeId: payload.origSwipeId,
+                            hiddenFloors: payload.hiddenFloors || [],
+                        };
+                        await idbReq(tx('summaries', 'readwrite').put(row));
+                    }
+                } catch (e) { dlog('标记 applied 失败: ' + (e && e.message || e), true); }
+            }
+            toast(`第${payload.volume}卷已替换隐藏`);
+            document.getElementById('gen-stat').textContent = `第${payload.volume}卷已替换隐藏 ✓`;
+            applyPending = null;
+            // [MP] 就地更新：桥回执已带回「隐藏楼号 + 结束楼新正文」，本地快照直接改这两处→界面秒变。
+            // 不再 post('get-snapshot')：那份「全楼层全版本全文」的巨型快照跨 iframe 序列化是分钟级黑洞，
+            // 隐藏/替换根本不需要重拉整份，回执里的增量就够画全。
+            if (snapshot && Array.isArray(snapshot.messages)) {
+                for (const f of (payload.hiddenFloors || [])) {
+                    if (snapshot.messages[f]) snapshot.messages[f].is_system = true;
+                }
+                const anchor = snapshot.messages[payload.rangeEnd];
+                if (anchor && typeof payload.anchorMes === 'string') {
+                    anchor.mes = payload.anchorMes;
+                    if (Array.isArray(payload.anchorSwipes)) anchor.swipes = payload.anchorSwipes;
+                    if (Number.isInteger(payload.anchorSwipeId)) anchor.swipeId = payload.anchorSwipeId;
+                }
+                await render();
+                mpMark('★2 本地就地render完成（界面此刻已变，不再等快照）');
+            }
+            await renderSummaryHistory();
+        }
+
+        // [MP] 历史卡片按钮统一分发：执行替换 / 还原 / 删除
+        let revertPending = null; // {id, volume}
+        document.getElementById('sum-history').addEventListener('click', async (e) => {
+            if (!e.target.closest) return;
+            const applyBtn = e.target.closest('.mp-apply-saved');
+            if (applyBtn) { const id = parseInt(applyBtn.getAttribute('data-id'), 10); if (Number.isInteger(id)) await applySavedSummary(id); return; }
+            const revertBtn = e.target.closest('.mp-revert');
+            if (revertBtn) { const id = parseInt(revertBtn.getAttribute('data-id'), 10); if (Number.isInteger(id)) await revertSummary(id); return; }
+            const delBtn = e.target.closest('.mp-del-sum');
+            if (delBtn) { const id = parseInt(delBtn.getAttribute('data-id'), 10); if (Number.isInteger(id)) await deleteSummary(id); return; }
+        });
+
+        // [MP] 把库里一条已保存的总结推到酒馆执行替换隐藏（刷新后仍可操作，走这条）
+        async function applySavedSummary(id) {
+            if (!bridgeOnline) { toast('桥离线，无法替换'); return; }
+            const row = await idbReq(tx('summaries', 'readonly').get(id));
+            if (!row) { toast('找不到该卷'); return; }
+            if (row.applied) { toast('这卷已经替换过了'); return; }
+            const rs = row.rangeStart, re = row.rangeEnd;
+            if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('这卷区间数据异常'); return; }
+            if (!confirm(
+                `确认执行替换隐藏？（第 ${row.volume} 卷）\n\n` +
+                `· ${rs}~${re} 楼将折叠为一条总结\n` +
+                `· 总结写成第 ${re} 楼的新版本\n` +
+                `· ${rs}~${re - 1} 楼将被隐藏，不再进提示词\n\n` +
+                `会改动酒馆真实存档，但可逆：随时点这一卷的【还原正文】即可一键撤销。`)) return;
+            applyPending = { id: row.id, volume: row.volume, rs, re };
+            dlog(`发 apply-replace(存档) ${rs}~${re} 第${row.volume}卷`);
+            post('apply-replace', { rangeStart: rs, rangeEnd: re, summaryText: row.summaryText, volume: row.volume });
+        }
+
+        // [MP] 删除一条总结存档（只删蜜脾库，不动酒馆；已替换的提醒先还原）
+        async function deleteSummary(id) {
+            const row = await idbReq(tx('summaries', 'readonly').get(id));
+            if (!row) { toast('找不到该卷'); return; }
+            if (row.applied) {
+                if (!confirm(`第 ${row.volume} 卷已替换到酒馆。\n删除只删蜜脾这条记录，酒馆里的折叠不会自动还原，且删后就没法再一键还原了。\n\n仍要删除吗？（建议先「还原正文」再删）`)) return;
+            } else {
+                if (!confirm(`删除第 ${row.volume} 卷总结记录？（只删蜜脾库，不动酒馆）`)) return;
+            }
+            await idbReq(tx('summaries', 'readwrite').delete(id));
+            toast(`已删除第${row.volume}卷`);
+            await renderSummaryHistory();
+        }
+
+        async function revertSummary(id) {
+            if (!bridgeOnline) { toast('桥离线，无法还原'); return; }
+            const row = await idbReq(tx('summaries', 'readonly').get(id));
+            if (!row) { toast('找不到该卷'); return; }
+            if (!row.revert) { toast('这条没有还原信息（旧数据），无法自动还原'); return; }
+            if (!confirm(
+                `确认还原第 ${row.volume} 卷？\n\n` +
+                `· 第 ${row.rangeEnd} 楼恢复成原文\n` +
+                `· ${row.rangeStart}~${row.rangeEnd - 1} 楼取消隐藏\n\n` +
+                `会改动酒馆真实存档。`)) return;
+            revertPending = { id, volume: row.volume };
+            mpStart(`发 revert-replace 第${row.volume}卷 结束楼${row.rangeEnd}`);
+            post('revert-replace', {
+                rangeEnd: row.rangeEnd,
+                volume: row.volume,
+                origMes: row.revert.origMes,
+                origSwipeId: row.revert.origSwipeId,
+                hiddenFloors: row.revert.hiddenFloors || [],
+            });
+        }
+
+        async function onRevertResult(payload) {
+            mpMark('★1 桥回执 revert-result 到手');
+            if (!payload || !payload.ok) {
+                const m = payload && payload.message || '未知错误';
+                toast('还原失败：' + m);
+                dlog('revert-replace 失败: ' + m, true);
+                return;
+            }
+            if (revertPending && revertPending.id != null) {
+                try {
+                    const row = await idbReq(tx('summaries', 'readonly').get(revertPending.id));
+                    if (row) {
+                        // [MP] 乐观更新：删掉还原信息前先抓出隐藏楼号，本地快照立刻取消这些楼的隐藏→界面秒变
+                        const floors = (payload.hiddenFloors && payload.hiddenFloors.length)
+                            ? payload.hiddenFloors
+                            : ((row.revert && Array.isArray(row.revert.hiddenFloors)) ? row.revert.hiddenFloors : []);
+                        if (snapshot && Array.isArray(snapshot.messages)) {
+                            for (const f of floors) { if (snapshot.messages[f]) snapshot.messages[f].is_system = false; }
+                            // [MP] 结束楼恢复原文：同样吃桥回执里的增量，不重拉整份快照
+                            const anchor = snapshot.messages[payload.rangeEnd];
+                            if (anchor && typeof payload.anchorMes === 'string') {
+                                anchor.mes = payload.anchorMes;
+                                if (Array.isArray(payload.anchorSwipes)) anchor.swipes = payload.anchorSwipes;
+                                if (Number.isInteger(payload.anchorSwipeId)) anchor.swipeId = payload.anchorSwipeId;
+                            }
+                        }
+                        row.applied = false; delete row.revert;
+                        await idbReq(tx('summaries', 'readwrite').put(row));
+                    }
+                } catch (e) { dlog('清除 applied 失败: ' + (e && e.message || e), true); }
+            }
+            toast(`第${payload.volume}卷已还原`);
+            revertPending = null;
+            await render();            // [MP] 本地秒刷
+            mpMark('★2 本地乐观render完成（界面此刻应已变）');
+            await renderSummaryHistory();
+            mpMark('★3 发 get-snapshot 兜底对账');
+            post('get-snapshot');      // 后台兜底对账
+        }
+
+        async function renderSummaryHistory() {
+            const box = document.getElementById('sum-history');
+            box.innerHTML = '';
+            if (!currentChatKey) return;
+            const rows = await summariesForChat(currentChatKey);
+            let lastEnd = -1;
+            rows.forEach(r => {
+                if (typeof r.rangeEnd === 'number') lastEnd = Math.max(lastEnd, r.rangeEnd);
+                const div = document.createElement('div');
+                div.className = 'sum-item';
+                const actions =
+                    (!r.applied ? ` <button class="mp-apply-saved" data-id="${r.id}">执行替换隐藏</button>` : '') +
+                    (r.applied && r.revert ? ` <button class="mp-revert" data-id="${r.id}">还原正文</button>` : '') +
+                    (r.applied && !r.revert ? ' <span class="floor-meta">（旧数据无还原信息）</span>' : '') +
+                    ` <button class="mp-del-sum" data-id="${r.id}">删除</button>`;
+                div.innerHTML =
+                    `<div class="meta"><b>第${r.volume}卷</b> · ${r.rangeStart}~${r.rangeEnd}楼 · ${new Date(r.createdAt).toLocaleString()}` +
+                    (r.applied ? ' <span class="applied">已替换</span>' : '') +
+                    actions + '</div>' +
+                    `<details class="sum-detail"><summary>${esc(textPrefix80(r.summaryText))}…（点开看全文）</summary>` +
+                    `<div class="sum-full">${esc(r.summaryText)}</div></details>`;
+                box.appendChild(div);
+            });
+            document.getElementById('lastvol').textContent = rows.length
+                ? `已有${rows.length}卷，上一卷覆盖到 ${lastEnd}楼（仅参考）` : '暂无总结';
+            // [MP] 总结集合变化（保存/替换/还原/快照）后，若注入开启则同步刷新注入
+            if (injEnabled) { try { await refreshInjection(); } catch (e) { dlog('刷新注入失败: ' + (e && e.message || e), true); } }
+        }
+
+        // [MP] ============ 信息档案 + 注入（第3期）============
+        let injEnabled = false, injPos = 1, injDepth = 4;   // 注入设置（全局，非按聊天）
+        let codexReqId = 0, codexCfg = null, codexExistingDoc = '', codexTimer = null;
+
+        async function loadCodexRecord(chatKey) {
+            if (!db || !chatKey) return null;
+            return await idbReq(tx('codex', 'readonly').get(chatKey));
+        }
+
+        async function renderCodex() {
+            const ta = document.getElementById('codex-text');
+            const rec = currentChatKey ? await loadCodexRecord(currentChatKey) : null;
+            ta.value = (rec && rec.docText) ? rec.docText : '';
+            document.getElementById('btn-codex-revert').disabled = !(rec && rec.prevDocText);
+            document.getElementById('codex-meta').textContent = currentChatKey
+                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}` : '本聊天暂无档案')
+                : '未定位聊天';
+        }
+
+        // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版
+        async function saveCodexDoc(docText, keepPrev) {
+            if (!currentChatKey) throw new Error('未定位聊天');
+            const old = await loadCodexRecord(currentChatKey);
+            const rec = {
+                chatKey: currentChatKey,
+                docText: String(docText != null ? docText : ''),
+                updatedAt: new Date().toISOString(),
+                prevDocText: keepPrev ? ((old && old.docText) || '') : ((old && old.prevDocText) || ''),
+            };
+            await idbReq(tx('codex', 'readwrite').put(rec));
+            return rec;
+        }
+
+        // [MP] 最新一卷总结正文（更早卷已替换进楼层，不重复注入）
+        async function latestSummaryText() {
+            if (!currentChatKey) return '';
+            const rows = await summariesForChat(currentChatKey);   // 已按卷号升序
+            if (!rows.length) return '';
+            const last = rows[rows.length - 1];
+            return last ? String(last.summaryText || '') : '';
+        }
+
+        // [MP] 把「当前档案 + 最新一卷总结」推给桥去注入；关了就发 enabled:false 让桥清空
+        async function refreshInjection() {
+            if (!bridgeOnline) { document.getElementById('inj-stat').textContent = '桥离线，注入待桥上线'; return; }
+            if (!injEnabled) { post('set-injection', { enabled: false }); return; }
+            const codexText = document.getElementById('codex-text').value || '';
+            const summaryText = await latestSummaryText();
+            post('set-injection', {
+                enabled: true, codexText, summaryText,
+                position: Number(injPos), depth: Number(injDepth),
+            });
+        }
+
+        // 注入开关/位置/深度
+        document.getElementById('inj-enabled').onchange = async (e) => {
+            injEnabled = e.target.checked;
+            await putSetting('injEnabled', injEnabled);
+            document.getElementById('inj-stat').textContent = injEnabled ? '注入开启，发送中…' : '注入已关闭';
+            await refreshInjection();
+            await updateInjectMarker();  // [MP] 开/关立刻在正文区显/隐落点线
+        };
+        document.getElementById('inj-pos').onchange = async (e) => {
+            injPos = parseInt(e.target.value, 10); await putSetting('injPos', injPos);
+            if (injEnabled) await refreshInjection();
+            await updateInjectMarker();
+        };
+        document.getElementById('inj-depth').onchange = async (e) => {
+            injDepth = parseInt(e.target.value, 10) || 0; await putSetting('injDepth', injDepth);
+            if (injEnabled) await refreshInjection();
+            await updateInjectMarker();
+        };
+
+        // 保存档案（手动编辑后）
+        let codexSaveBusy = false;
+        document.getElementById('btn-codex-save').onclick = async () => {
+            if (codexSaveBusy) return; codexSaveBusy = true;
+            try {
+                if (!currentChatKey) { toast('未定位聊天'); return; }
+                await saveCodexDoc(document.getElementById('codex-text').value, true);
+                toast('档案已保存');
+                await renderCodex();
+                if (injEnabled) await refreshInjection();
+            } catch (e) { toast('保存失败: ' + (e && e.message || e)); dlog('存档案失败: ' + (e && e.message || e), true); }
+            finally { codexSaveBusy = false; }
+        };
+
+        // 还原上一版（与当前互换，可来回切）
+        document.getElementById('btn-codex-revert').onclick = async () => {
+            if (!currentChatKey) { toast('未定位聊天'); return; }
+            const rec = await loadCodexRecord(currentChatKey);
+            if (!rec || !rec.prevDocText) { toast('没有可还原的上一版'); return; }
+            const restored = {
+                chatKey: currentChatKey, docText: rec.prevDocText,
+                updatedAt: new Date().toISOString(), prevDocText: rec.docText,
+            };
+            await idbReq(tx('codex', 'readwrite').put(restored));
+            toast('已还原到上一版');
+            await renderCodex();
+            if (injEnabled) await refreshInjection();
+        };
+
+        // AI更新档案：两阶段，跟总结同一条路（桥取原文→前台直发副API），长请求不被手机冻
+        document.getElementById('btn-codex-gen').onclick = () => {
+            if (codexReqId !== 0) { toast('档案更新已在进行，等它回来或超时'); return; }
+            if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
+            const rs = parseInt(document.getElementById('codex-start').value, 10);
+            const re = parseInt(document.getElementById('codex-end').value, 10);
+            if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
+            const cfg = apiConfigFromUI();
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); setView('v-settings'); return; }
+            const reqId = ++genReqSeq;
+            codexReqId = reqId; codexCfg = cfg;
+            codexExistingDoc = document.getElementById('codex-text').value || '';
+            document.getElementById('btn-codex-gen').disabled = true;
+            document.getElementById('codex-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
+            if (codexTimer) clearTimeout(codexTimer);
+            codexTimer = setTimeout(() => {
+                if (codexReqId !== reqId) return;
+                codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                document.getElementById('codex-stat').textContent = '桥没回原文（酒馆标签页可能被冻）：切回酒馆停一下再回来重点';
+                dlog('codex get-range-text 20秒没回，疑似桥被冻', true);
+            }, 20000);
+            dlog(`发 get-range-text(codex) ${rs}~${re} #${reqId}`);
+            post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+        };
+
+        // 档案的第二阶段：原文回来，前台直发副API更新档案（流式实时写进档案框）
+        async function onCodexRangeText(payload) {
+            const reqId = payload.reqId;
+            if (codexTimer) { clearTimeout(codexTimer); codexTimer = null; }
+            if (payload.ok === false) {
+                codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                document.getElementById('codex-stat').textContent = '取原文失败：' + (payload.message || '未知');
+                return;
+            }
+            const useStream = codexCfg && codexCfg.stream !== false;
+            const userText = '【现有档案】\n' + (codexExistingDoc || '（暂无，请按分节新建）')
+                + '\n\n【新增区间原文】\n' + (payload.text || '');
+            const ta = document.getElementById('codex-text');
+            let onProgress = null;
+            if (useStream) {
+                document.getElementById('codex-stat').textContent = '生成中…（流式·实时写入下方档案框）';
+                ta.value = '';
+                onProgress = (txt) => {
+                    if (codexReqId !== reqId) return;
+                    const s = String(txt || ''); ta.value = s; ta.scrollTop = ta.scrollHeight;
+                    document.getElementById('codex-stat').textContent = `生成中… 已收 ${s.length} 字`;
+                };
+            } else {
+                document.getElementById('codex-stat').textContent = '生成中…（非流式，卡了自动重试）';
+            }
+            try {
+                const codexPrompt = document.getElementById('s-codex-prompt').value || DEFAULT_CODEX_PROMPT;
+                const text = await vaultSummarize(codexPrompt, userText, codexCfg, onProgress);
+                if (codexReqId !== reqId) { dlog('档案回来但已不是当前请求，丢弃 #' + reqId, true); return; }
+                codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                if (!text || !text.trim()) {
+                    document.getElementById('codex-stat').textContent = '副API返回空内容（多半被拒/过滤或思考模型）';
+                    // 空回时把原档案填回去，别把框清没了
+                    await renderCodex();
+                    return;
+                }
+                ta.value = text;
+                await saveCodexDoc(text, true);      // 旧版压进 prevDocText
+                await renderCodex();
+                document.getElementById('codex-stat').textContent = '档案已更新并入库 ✓ 可再编辑后保存';
+                if (injEnabled) await refreshInjection();
+            } catch (e) {
+                if (codexReqId !== reqId) { dlog('档案失败但已不是当前请求，忽略 #' + reqId, true); return; }
+                codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                document.getElementById('codex-stat').textContent = '生成失败：' + (e && e.message || e);
+                toast('档案更新失败: ' + (e && e.message || e));
+            }
+        }
+
+        // [MP] ============ 渲染 ============
+        function esc(s) { return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+        function renderMd(text) {
+            if (window.marked && typeof window.marked.parse === 'function') {
+                try { return { html: window.marked.parse(text || ''), plain: false }; } catch (e) { /* fall through */ }
+            }
+            return { html: esc(text || ''), plain: true };
+        }
+
+        function textPrefix80(s) { return String(s || '').slice(0, 80); }
+
+        // 存档指纹匹配：优先 floorIndex+swipeIndex，其次 sendDate+textPrefix
+        function isArchived(saved, floorIndex, swipeIndex, sendDate, swipeText) {
+            const pfx = textPrefix80(swipeText);
+            return saved.some(r =>
+                (r.floorIndex === floorIndex && r.swipeIndex === swipeIndex) ||
+                (r.sendDate && sendDate && r.sendDate === sendDate && r.textPrefix === pfx)
+            );
+        }
+
+        async function render() {
+            const main = document.getElementById('main');
+            if (!snapshot || !snapshot.messages || !snapshot.messages.length) {
+                main.innerHTML = '<div class="empty">当前聊天没有可显示的楼层</div>';
+                document.getElementById('stat').textContent = '';
+                return;
+            }
+            const saved = await proseForChat(snapshot.chatKey);
+            const fAI = document.getElementById('f-ai').checked;
+            const fSaved = document.getElementById('f-saved').checked;
+            const kw = document.getElementById('f-kw').value.trim().toLowerCase();
+
+            let shown = 0;
+            const frag = document.createDocumentFragment();
+
+            for (const m of snapshot.messages) {
+                if (fAI && m.is_user) continue;
+                const swipes = m.swipes && m.swipes.length ? m.swipes : [m.mes];
+                const floorSaved = swipes.some((t, si) => isArchived(saved, m.floorIndex, si, m.sendDate, t));
+                if (fSaved && !floorSaved) continue;
+                if (kw) {
+                    const hit = swipes.some(t => String(t).toLowerCase().includes(kw));
+                    if (!hit) continue;
+                }
+                shown++;
+
+                const floor = document.createElement('div');
+                floor.className = 'floor';
+                floor.dataset.floor = m.floorIndex;  // [MP] 供注入标记线定位
+
+                const head = document.createElement('div');
+                head.className = 'floor-head';
+                const roleBadge = m.is_user ? '<span class="badge user">你</span>' : '<span class="badge ai">AI</span>';
+                const hiddenBadge = m.is_system ? '<span class="badge hidden">隐藏</span>' : '';
+                const verInfo = swipes.length > 1 ? `${swipes.length}版本` : '单版本';
+                head.innerHTML =
+                    roleBadge + hiddenBadge +
+                    `<span class="floor-meta">${m.floorIndex}楼 · ${esc(m.name)} · ${verInfo}</span>` +
+                    `<span class="floor-preview">${esc(textPrefix80(m.mes))}</span>`;
+                floor.appendChild(head);
+
+                const box = document.createElement('div');
+                box.className = 'swipes';
+                floor.appendChild(box);
+
+                // [MP] 懒渲染：折叠态不解析 markdown、不建 DOM；点开哪一楼才现场建那一楼，
+                // 避免打开面板时把全聊天几百个版本一次性 marked.parse 堆爆主线程→高延迟。
+                let built = false;
+                const buildSwipes = () => {
+                    if (built) return; built = true;
+                    swipes.forEach((t, si) => {
+                        const sw = document.createElement('div');
+                        sw.className = 'swipe';
+                        const chosen = si === m.swipeId;
+                        const arch = isArchived(saved, m.floorIndex, si, m.sendDate, t);
+
+                        const bar = document.createElement('div');
+                        bar.className = 'swipe-bar';
+                        bar.innerHTML =
+                            `<span class="path-label">${m.floorIndex}楼 · 版本${si}</span>` +
+                            (chosen ? '<span class="chosen-tag">当前采用</span>' : '') +
+                            (arch ? '<span class="saved-tag">已存档</span>' : '');
+                        const btn = document.createElement('button');
+                        btn.textContent = arch ? '再存一份' : '存档';
+                        btn.onclick = () => archiveSwipe(m, si, t, chosen);
+                        bar.appendChild(btn);
+                        sw.appendChild(bar);
+
+                        const body = document.createElement('div');
+                        const r = renderMd(t);
+                        body.className = 'swipe-body' + (r.plain ? ' plain' : '');
+                        body.innerHTML = r.html;
+                        sw.appendChild(body);
+                        box.appendChild(sw);
+                    });
+                };
+                head.onclick = () => {
+                    if (!floor.classList.contains('open')) buildSwipes();
+                    floor.classList.toggle('open');
+                };
+                frag.appendChild(floor);
+            }
+
+            main.innerHTML = '';
+            if (!shown) main.innerHTML = '<div class="empty">没有符合筛选条件的楼层</div>';
+            else main.appendChild(frag);
+            document.getElementById('stat').textContent = `共${snapshot.count}楼，显示${shown}，已存档${saved.length}条`;
+            await updateInjectMarker();  // [MP] 画注入落点
+        }
+
+        // [MP] 算注入落点：位置=最前→top；深度0→垫最后一楼下面；深度D→从底数第D可见楼上方
+        function computeInjectTarget() {
+            if (!injEnabled || !snapshot || !snapshot.messages) return null;
+            const vis = snapshot.messages.filter(m => !m.is_system);  // 隐藏楼不进上下文，不计数
+            const n = vis.length;
+            if (Number(injPos) === 0) return { mode: 'top' };
+            const D = Number(injDepth) || 0;
+            if (D <= 0) return { mode: 'bottom' };
+            const idx = n - D;
+            if (idx <= 0) return { mode: 'top' };
+            if (idx >= n) return { mode: 'bottom' };
+            return { mode: 'before', floorIndex: vis[idx].floorIndex, below: D };
+        }
+
+        async function buildInjectMarkerEl(target) {
+            const rec = currentChatKey ? await loadCodexRecord(currentChatKey) : null;
+            const codexText = ((rec && rec.docText) || '').trim();
+            const sumText = (await latestSummaryText() || '').trim();
+            const combined = [codexText, sumText].filter(Boolean).join('\n\n');
+            let where;
+            if (target.mode === 'top') where = '插在所有聊天最前面（#0楼之前）';
+            else if (target.mode === 'bottom') where = '垫在最后一楼下面（深度0）';
+            else where = `插在第${target.floorIndex}楼上方 · 它下面还有${target.below}个可见楼（深度${injDepth}）`;
+            const bits = [];
+            if (codexText) bits.push('档案 ' + codexText.length + '字');
+            if (sumText) bits.push('最新卷总结 ' + sumText.length + '字');
+            const load = bits.length ? bits.join(' + ') : '档案和总结都为空，实际注入是空的';
+            const el = document.createElement('div');
+            el.className = 'inject-marker';
+            el.innerHTML =
+                `<div class="im-head">🐝 蜜脾注入落点 · ${where}</div>` +
+                `<div class="im-sub">装的内容：${load}</div>` +
+                `<details class="im-detail"><summary>点开看注进去的原文</summary><div class="im-full"></div></details>`;
+            el.querySelector('.im-full').textContent = combined || '（空）';
+            return el;
+        }
+
+        async function updateInjectMarker() {
+            const main = document.getElementById('main');
+            if (!main) return;
+            main.querySelectorAll('.inject-marker').forEach(e => e.remove());
+            const target = computeInjectTarget();
+            if (!target) return;
+            const marker = await buildInjectMarkerEl(target);
+            if (target.mode === 'top') { main.insertBefore(marker, main.firstChild); return; }
+            if (target.mode === 'bottom') { main.appendChild(marker); return; }
+            let ref = null;
+            main.querySelectorAll('.floor').forEach(f => { if (!ref && f.dataset.floor === String(target.floorIndex)) ref = f; });
+            if (ref) main.insertBefore(marker, ref);
+            else { marker.querySelector('.im-head').textContent += '（该楼当前被筛选，标记暂置顶）'; main.insertBefore(marker, main.firstChild); }
+        }
+
+        async function archiveSwipe(m, swipeIndex, text, isChosen) {
+            try {
+                await addProse({
+                    chatKey: snapshot.chatKey,
+                    floorIndex: m.floorIndex,
+                    swipeIndex: swipeIndex,
+                    isChosen: !!isChosen,
+                    sendDate: m.sendDate || null,
+                    textPrefix: textPrefix80(text),
+                    content: text,
+                    savedAt: new Date().toISOString(),
+                    note: '',
+                });
+                toast(`已存档 ${m.floorIndex}楼·版本${swipeIndex}`);
+                await render();
+            } catch (e) {
+                toast('存档失败: ' + (e && e.message || e));
+            }
+        }
+
+        ['f-ai', 'f-saved'].forEach(id => document.getElementById(id).onchange = render);
+        document.getElementById('f-kw').oninput = () => { clearTimeout(window.__kwT); window.__kwT = setTimeout(render, 200); };
+
+        // [MP] ============ 正文存档清单：核对存档↔酒馆对应 ============
+        // 给一条存档去当前快照里认位置，返回 {status, floor, swipe}
+        //   exact  = 原位在、内容一致
+        //   moved  = 指纹(时间戳+开头)在别处/别版本命中，位置变了
+        //   edited = 原楼原版本还在、但正文被改过（对不上开头，也没在别处找到）
+        //   orphan = 全聊天都找不到（源楼多半从底部被删了）
+        function locateProse(rec, messages) {
+            if (!messages || !messages.length) return { status: 'unknown' };
+            const pfx = rec.textPrefix || textPrefix80(rec.content);
+            const swOf = (m) => (m.swipes && m.swipes.length ? m.swipes : [m.mes]);
+            // 1) 原位精确
+            const at = messages[rec.floorIndex];
+            if (at) {
+                const sw = swOf(at);
+                const t = sw[rec.swipeIndex];
+                if (t != null && textPrefix80(t) === pfx) return { status: 'exact', floor: rec.floorIndex, swipe: rec.swipeIndex };
+            }
+            // 2) 指纹全局找（时间戳一致 或 落回同楼号），开头对上即命中
+            for (const m of messages) {
+                const dateOk = rec.sendDate && m.sendDate && rec.sendDate === m.sendDate;
+                if (!dateOk && m.floorIndex !== rec.floorIndex) continue;
+                const sw = swOf(m);
+                for (let si = 0; si < sw.length; si++) {
+                    if (textPrefix80(sw[si]) === pfx) return { status: 'moved', floor: m.floorIndex, swipe: si };
+                }
+            }
+            // 3) 原楼原版本槽还在，但正文改了
+            if (at && swOf(at)[rec.swipeIndex] != null) return { status: 'edited', floor: rec.floorIndex, swipe: rec.swipeIndex };
+            // 4) 彻底找不到
+            return { status: 'orphan' };
+        }
+
+        const PROSE_STATUS_TXT = {
+            exact: (r) => `对上 · 第${r.floor}楼·版本${r.swipe} · 内容一致`,
+            moved: (r) => `位置变了 · 现在在 第${r.floor}楼·版本${r.swipe}`,
+            edited: (r) => `同楼正文改过 · 第${r.floor}楼·版本${r.swipe}`,
+            orphan: () => `对不上 · 源楼已不在（孤儿）`,
+            unknown: () => `未核对 · 先刷新快照`,
+        };
+
+        // [MP] 扫三库，按聊天汇总每个聊天各自存了多少
+        async function allArchiveKeys() {
+            if (!db) return [];
+            const prose = await idbReq(tx('prose', 'readonly').getAll());
+            const sums = await idbReq(tx('summaries', 'readonly').getAll());
+            const codex = await idbReq(tx('codex', 'readonly').getAll());
+            const map = new Map();
+            const get = (k) => { if (!map.has(k)) map.set(k, { chatKey: k, prose: 0, vols: 0, codex: false }); return map.get(k); };
+            prose.forEach(r => { if (r.chatKey) get(r.chatKey).prose++; });
+            sums.forEach(r => { if (r.chatKey) get(r.chatKey).vols++; });
+            codex.forEach(r => { if (r.chatKey && (r.docText || '').trim()) get(r.chatKey).codex = true; });
+            return Array.from(map.values()).sort((a, b) => a.chatKey.localeCompare(b.chatKey));
+        }
+
+        async function renderArchiveOverview() {
+            const wrap = document.getElementById('archive-overview');
+            if (!wrap) return;
+            const list = await allArchiveKeys();
+            wrap.innerHTML = '';
+            if (!list.length) { wrap.innerHTML = '<div class="empty">还没有任何聊天存过档</div>'; return; }
+            list.forEach(rec => {
+                const cur = rec.chatKey === currentChatKey;
+                const row = document.createElement('div');
+                row.className = 'arc-row' + (cur ? ' cur' : '');
+                const bits = [];
+                bits.push(`正文 ${rec.prose}`);
+                bits.push(`总结 ${rec.vols}卷`);
+                bits.push(rec.codex ? '有档案' : '无档案');
+                row.innerHTML =
+                    `<span class="arc-name">${cur ? '▶ ' : ''}${esc(rec.chatKey)}</span>` +
+                    `<span class="arc-bits floor-meta">${bits.join(' · ')}${cur ? ' · 正在看' : ''}</span>`;
+                wrap.appendChild(row);
+            });
+        }
+
+        async function renderProseList() {
+            const wrap = document.getElementById('prose-list');
+            const meta = document.getElementById('prose-meta');
+            if (!currentChatKey) { wrap.innerHTML = '<div class="empty">未定位聊天</div>'; meta.textContent = ''; return; }
+            const rows = await proseForChat(currentChatKey);
+            rows.sort((a, b) => (a.floorIndex - b.floorIndex) || (a.swipeIndex - b.swipeIndex) || (a.id - b.id));
+            const messages = (snapshot && snapshot.messages) ? snapshot.messages : null;
+            let orphan = 0, drift = 0;
+            wrap.innerHTML = '';
+            if (!rows.length) { wrap.innerHTML = '<div class="empty">这个聊天还没存过正文</div>'; meta.textContent = ''; return; }
+            rows.forEach(rec => {
+                const loc = locateProse(rec, messages);
+                if (loc.status === 'orphan') orphan++;
+                if (loc.status === 'moved' || loc.status === 'edited') drift++;
+                const row = document.createElement('div');
+                row.className = 'prose-row';
+                const statTxt = (PROSE_STATUS_TXT[loc.status] || PROSE_STATUS_TXT.unknown)(loc);
+                const head = document.createElement('div');
+                head.className = 'pr-head';
+                head.innerHTML =
+                    `<span class="pi ${loc.status}">${statTxt}</span>` +
+                    `<span class="floor-meta">存于 ${rec.floorIndex}楼·版本${rec.swipeIndex}${rec.isChosen ? '·存时采用' : ''} · ${rec.savedAt ? new Date(rec.savedAt).toLocaleString() : ''}</span>` +
+                    `<span class="spacer"></span>`;
+                const btnView = document.createElement('button');
+                btnView.textContent = '看正文';
+                const btnDel = document.createElement('button');
+                btnDel.textContent = '删除';
+                head.appendChild(btnView); head.appendChild(btnDel);
+                row.appendChild(head);
+                const prev = document.createElement('div');
+                prev.className = 'pr-prev';
+                prev.textContent = textPrefix80(rec.content) + '…';
+                row.appendChild(prev);
+                const full = document.createElement('div');
+                full.className = 'pr-full'; full.style.display = 'none';
+                full.textContent = rec.content || '';
+                row.appendChild(full);
+                btnView.onclick = () => {
+                    const open = full.style.display !== 'none';
+                    full.style.display = open ? 'none' : 'block';
+                    btnView.textContent = open ? '看正文' : '收起正文';
+                };
+                btnDel.onclick = async () => {
+                    if (!confirm(`删除这条存档？（存于${rec.floorIndex}楼·版本${rec.swipeIndex}）\n只删蜜脾相册里的这张照片，不动酒馆。`)) return;
+                    try { await delProse(rec.id); toast('已删除该存档'); await renderProseList(); await render(); }
+                    catch (e) { toast('删除失败: ' + (e && e.message || e)); }
+                };
+                wrap.appendChild(row);
+            });
+            meta.textContent = `共${rows.length}条` +
+                (messages ? `（位置变/改过 ${drift}，孤儿 ${orphan}）` : '（先刷新快照才能核对位置）');
+        }
+
+        function proseListOpen() { return document.getElementById('v-overview').classList.contains('active'); }
+
+        // [MP] ============ 侧边栏 / 视图切换 ============
+        const VIEW_TITLES = { 'v-text': '正文', 'v-sum': '总结', 'v-codex': '信息档案', 'v-overview': '存档总览', 'v-settings': '副API设置' };
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+        async function setView(name) {
+            document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === name));
+            document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+            document.getElementById('view-title').textContent = VIEW_TITLES[name] || '';
+            closeSidebar();
+            if (name === 'v-overview') { await renderArchiveOverview(); await renderProseList(); }
+        }
+        document.getElementById('btn-menu').onclick = () => {
+            document.getElementById('sidebar').classList.add('open');
+            document.getElementById('overlay').classList.add('show');
+        };
+        document.getElementById('overlay').onclick = closeSidebar;
+        document.querySelectorAll('.nav-item[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+        // [MP] 齿轮展开/收起工具组
+        document.getElementById('btn-tools').onclick = () => document.getElementById('tools-group').classList.toggle('show');
+
+        // [MP] ============ 导出 / 导入 ============
+        document.getElementById('btn-export').onclick = async () => {
+            const data = {
+                app: 'mellarium',
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                prose: await getAll('prose'),
+                summaries: await getAll('summaries'),
+                codex: await getAll('codex'),
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const d = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `mellarium-export-${d}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast('已导出全部');
+        };
+
+        document.getElementById('btn-import').onclick = () => document.getElementById('file-import').click();
+        document.getElementById('file-import').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const data = JSON.parse(await file.text());
+                if (data.app !== 'mellarium') { toast('不是蜜脾导出文件'); return; }
+                const n = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
+                if (!confirm(`导入 ${n} 条记录？\nprose/summaries 追加，codex 按聊天覆盖。`)) return;
+                for (const r of (data.prose || [])) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
+                for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
+                for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
+                toast(`已导入 ${n} 条`);
+                await render();
+            } catch (err) {
+                toast('导入失败: ' + (err && err.message || err));
+            } finally {
+                e.target.value = '';
+            }
+        };
+
+        // [MP] ============ toast ============
+        let toastT = null;
+        function toast(msg) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.add('show');
+            if (toastT) clearTimeout(toastT);
+            toastT = setTimeout(() => el.classList.remove('show'), 2200);
+        }
+
+        // [MP] ============ 启动 ============
+        (async function init() {
+            dlog('vault启动，marked=' + (!!window.marked));
+            try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
+            try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
+            post('cancel-inflight'); // [MP] 先掐掉上次刷新前挂着的僵尸副API请求，再开工
+            post('ping');
+            dlog('已发ping，等桥应答');
+            heartbeat();
+        })();
+    </script>
+</body>
+
+</html>

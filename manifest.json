@@ -1,0 +1,12 @@
+{
+    "display_name": "蜜脾 Mellarium",
+    "loading_order": 101,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Claude x Miel",
+    "version": "0.2.0",
+    "homePage": "",
+    "auto_update": false
+}
