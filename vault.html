@@ -9,18 +9,24 @@
     <!-- [MP] marked 本地单文件，不走CDN；缺失时回退纯文本渲染 -->
     <script src="lib/marked.min.js" defer></script>
     <style>
+        /* [MP-美化] 蜜金暖调暗色调色板 */
         :root {
-            --bg: #1a1a1e;
-            --panel: #24242b;
-            --panel2: #2c2c35;
-            --ink: #e6e6ea;
-            --muted: #9a9aa6;
-            --line: #3a3a44;
-            --user: #3b6ea5;
-            --ai: #7a5cc0;
-            --accent: #d8a33b;
-            --ok: #4caf72;
-            --warn: #d86a4a;
+            --bg: #151518;
+            --panel: #1e1e24;
+            --panel2: #26262f;
+            --panel3: #2e2e38;
+            --ink: #d8d8dc;
+            --muted: #8a8a96;
+            --line: #2a2a34;
+            --user: #4a7eb8;
+            --ai: #8a6cd0;
+            --accent: #d4a03a;
+            --accent2: #e8c06a;
+            --ok: #5cb87a;
+            --warn: #d06848;
+            --radius: 10px;
+            --radius-sm: 6px;
+            --gap: 12px;
         }
 
         * { box-sizing: border-box; }
@@ -29,30 +35,38 @@
             margin: 0;
             background: var(--bg);
             color: var(--ink);
-            font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+            /* [MP-美化] */
+            font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+            -webkit-font-smoothing: antialiased;
         }
 
+        /* [MP-美化] 顶栏柔阴影替硬边框 */
         header {
             position: sticky;
             top: 0;
             z-index: 10;
             background: var(--panel);
-            border-bottom: 1px solid var(--line);
+            box-shadow: 0 1px 6px rgba(0,0,0,0.4);
             padding: 10px 16px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex-wrap: wrap;
         }
 
-        .title { font-weight: 700; color: var(--accent); }
+        .title { font-weight: 700; color: var(--accent); letter-spacing: .02em; }
 
+        /* [MP-美化] chatkey 过长省略号截断 */
         .chatkey {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--muted);
             padding: 3px 8px;
             background: var(--panel2);
-            border-radius: 6px;
+            border-radius: 4px;
+            max-width: 42vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -61,42 +75,51 @@
 
         .spacer { flex: 1; }
 
+        /* [MP-美化] 按钮圆角/内距/过渡统一 */
         button {
             background: var(--panel2);
             color: var(--ink);
             border: 1px solid var(--line);
-            border-radius: 6px;
-            padding: 5px 10px;
+            border-radius: var(--radius-sm);
+            padding: 7px 13px;
             cursor: pointer;
             font-size: 13px;
+            transition: background .15s, border-color .15s;
         }
 
         /* [MP] 只在真有指针悬停的设备上做 hover，手机触屏不再点完粘住高亮 */
         @media (hover: hover) {
-            button:hover:not(:disabled) { border-color: var(--accent); }
+            button:hover:not(:disabled) { background: var(--panel3); border-color: var(--accent); }
         }
         button:focus { outline: none; }        /* [MP] 去掉点完残留的焦点框 */
         button:active:not(:disabled) { border-color: var(--accent); transform: translateY(1px); } /* [MP] 只在按下瞬间给反馈 */
         button:disabled { opacity: .4; cursor: not-allowed; }
-        button.primary { background: var(--accent); color: #1a1a1e; border-color: var(--accent); font-weight: 600; }
+        button.primary { background: var(--accent); color: #151518; border-color: var(--accent); font-weight: 600; }
+        /* [MP-美化] 主按钮 hover 提亮 */
+        @media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--accent2); border-color: var(--accent2); } }
 
+        /* [MP-美化] 变化提示条改柔和暖红 */
         .dirty-banner {
             display: none;
-            background: var(--warn);
-            color: #fff;
-            padding: 6px 16px;
+            background: rgba(208, 104, 72, 0.15);
+            color: var(--warn);
+            border-bottom: 1px solid rgba(208, 104, 72, 0.3);
+            padding: 8px 16px;
             cursor: pointer;
             font-size: 13px;
+            text-align: center;
         }
 
         .dirty-banner.show { display: block; }
 
+        /* [MP-美化] 工具栏加底色 */
         .toolbar {
             padding: 10px 16px;
             display: flex;
-            gap: 12px;
+            gap: 14px;
             align-items: center;
             flex-wrap: wrap;
+            background: var(--panel);
             border-bottom: 1px solid var(--line);
         }
 
@@ -150,10 +173,21 @@
 
         .panel textarea { resize: vertical; }
         .summary-work textarea { margin: 8px 0; }
+        /* [MP-美化] 输入聚焦蜜金描边 */
+        input:focus, textarea:focus, select:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(212, 160, 58, 0.15);
+        }
+        /* [MP-美化] 总结/档案大文本框更舒展 */
+        .summary-work textarea, #codex-text { min-height: 180px; line-height: 1.7; padding: 12px 14px; font-size: 14.5px; }
 
+        /* [MP-美化] 总结历史卡片化 */
         .sum-item {
-            border-top: 1px solid var(--line);
-            padding: 8px 0;
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            margin-bottom: 8px;
             font-size: 13px;
         }
 
@@ -166,24 +200,30 @@
 
         main { padding: 12px 16px 80px; max-width: 1000px; margin: 0 auto; }
 
+        /* [MP-美化] 楼层卡片：展开态描蜜金边，隐藏楼变暗 */
         .floor {
             background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 8px;
-            margin-bottom: 10px;
+            border-radius: var(--radius);
+            margin-bottom: 12px;
             overflow: hidden;
+            transition: border-color .15s;
         }
+        .floor.open { border-color: rgba(212, 160, 58, 0.3); }
+        .floor:has(.badge.hidden) { opacity: .5; }
+        @media (hover: hover) { .floor:has(.badge.hidden):hover { opacity: .8; } }
 
         .floor-head {
-            padding: 8px 12px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
             gap: 10px;
             cursor: pointer;
             user-select: none;
+            transition: background .1s;
         }
 
-        .floor-head:hover { background: var(--panel2); }
+        @media (hover: hover) { .floor-head:hover { background: var(--panel2); } }
         .badge { font-size: 12px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
         .badge.user { background: var(--user); color: #fff; }
         .badge.ai { background: var(--ai); color: #fff; }
@@ -210,35 +250,44 @@
         .chosen-tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; }
         .saved-tag { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; }
 
+        /* [MP-美化] 正文用衬线体，行距放宽，长读不累 */
         .swipe-body {
             background: var(--bg);
             border: 1px solid var(--line);
-            border-radius: 6px;
-            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            padding: 14px 18px;
             white-space: normal;
             word-break: break-word;
+            font: 15.5px/1.85 "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+            letter-spacing: .02em;
         }
 
         .swipe-body.plain { white-space: pre-wrap; }
-        .swipe-body p { margin: 0 0 .6em; }
+        .swipe-body p { margin: 0 0 .8em; }
+        .swipe-body p:last-child { margin-bottom: 0; }
         .swipe-body:last-child { margin-bottom: 0; }
 
         .empty { color: var(--muted); text-align: center; padding: 40px; }
 
+        /* [MP-美化] toast 左侧蜜金条 + 投影 */
         #toast {
             position: fixed;
-            bottom: 20px;
+            bottom: 24px;
             left: 50%;
             transform: translateX(-50%);
-            background: var(--panel2);
-            border: 1px solid var(--accent);
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--accent);
             color: var(--ink);
-            padding: 8px 16px;
-            border-radius: 8px;
+            padding: 10px 20px;
+            border-radius: var(--radius);
             opacity: 0;
             transition: opacity .25s;
             pointer-events: none;
             z-index: 100;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            max-width: 80vw;
         }
 
         #toast.show { opacity: 1; }
@@ -284,8 +333,9 @@
         .arc-row .arc-name { font-weight: 600; word-break: break-all; }
         .arc-row .arc-bits { flex: 1; text-align: right; }
         /* [MP] 注入落点标记线 */
-        .inject-marker { border: 1px dashed #e6b04d; background: #211d12; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
-        .inject-marker .im-head { color: #f0c674; font-weight: 600; }
+        /* [MP-美化] 注入标记线（图标已在 JS 里用细星 ✦，此处不加 ::before） */
+        .inject-marker { border: 1px dashed rgba(212, 160, 58, 0.5); background: rgba(33, 29, 18, 0.7); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; }
+        .inject-marker .im-head { color: var(--accent2); font-weight: 600; padding-left: 2px; }
         .inject-marker .im-sub { color: #9a9aa6; font-size: 12px; margin-top: 2px; }
         .inject-marker .im-detail { margin-top: 6px; }
         .inject-marker .im-detail summary { cursor: pointer; color: #c9c9d4; }
@@ -303,18 +353,25 @@
         #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20; display: none; }
         #overlay.show { display: block; }
         .nav-title { font-weight: 700; color: var(--accent); font-size: 18px; padding: 2px 8px 10px; }
-        .nav-item { text-align: left; width: 100%; background: transparent; border: none; padding: 11px 12px; border-radius: 6px; color: var(--ink); font-size: 15px; }
-        .nav-item.active { background: var(--panel2); color: var(--accent); font-weight: 600; }
+        /* [MP-美化] 导航项蜜金左竖线标当前页 */
+        .nav-item { text-align: left; width: 100%; background: transparent; border: none; border-left: 3px solid transparent; padding: 10px 12px 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink); font-size: 15px; transition: background .12s, border-color .12s; }
+        .nav-item.active { background: var(--panel2); border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
         @media (hover: hover) { .nav-item:hover:not(:disabled) { background: var(--panel2); } }
         .nav-sep { height: 1px; background: var(--line); margin: 10px 6px; }
         .nav-cap { font-size: 12px; color: var(--muted); padding: 2px 12px; }
         .nav-spring { flex: 1; }
         .nav-gear { color: var(--muted); }
         .nav-item.sub { padding-left: 24px; font-size: 14px; color: var(--muted); }
-        .nav-item.sub.active { color: var(--accent); }
+        .nav-item.sub.active { color: var(--accent); border-left-color: var(--accent); }
         .tools-group { display: none; }
         .tools-group.show { display: block; }
         .icon-btn { font-size: 16px; line-height: 1; padding: 4px 9px; }
+
+        /* [MP-美化] 细滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+        @media (hover: hover) { ::-webkit-scrollbar-thumb:hover { background: var(--muted); } }
 
         .view { display: none; }
         .view.active { display: block; }
@@ -357,6 +414,8 @@
         </div>
         <div class="nav-sep"></div>
         <button id="btn-tools" class="nav-item nav-gear">⚙ 工具</button>
+        <!-- [MP-美化] 版本号 -->
+        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.2.0</div>
     </nav>
 
     <div class="dirty-banner" id="dirty">聊天数据已变化，点击刷新快照</div>
