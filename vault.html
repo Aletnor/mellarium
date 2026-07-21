@@ -23,6 +23,7 @@
             --accent: #d4a03a;
             --accent2: #e8c06a;
             --accent-rgb: 212, 160, 58;   /* accent 的 rgb，供聚焦光晕/描边等半透明处用 */
+            --on-accent: #151518;          /* accent 作背景时上面的文字色（蜜金浅，故用深字） */
             --ok: #5cb87a;
             --warn: #d06848;
             --radius: 10px;
@@ -30,22 +31,23 @@
             --gap: 12px;
         }
 
-        /* [MP-美化] 白金色系：冷调银灰暗底 + 白金亮银 accent */
+        /* [MP-美化] 白金色系：珍珠白亮底 + 冷银灰 accent + 深字 */
         :root[data-theme="platinum"] {
-            --bg: #131417;
-            --panel: #1c1e23;
-            --panel2: #262930;
-            --panel3: #30343d;
-            --ink: #e4e6ec;
-            --muted: #949aa8;
-            --line: #2d313b;
-            --user: #6d90c2;
-            --ai: #9d8adb;
-            --accent: #c8cfdb;
-            --accent2: #eef1f6;
-            --accent-rgb: 200, 207, 219;
-            --ok: #6bc79a;
-            --warn: #d88a6a;
+            --bg: #e8eaef;
+            --panel: #f7f8fb;
+            --panel2: #edeef3;
+            --panel3: #e1e4eb;
+            --ink: #242833;
+            --muted: #6d7486;
+            --line: #d5d9e2;
+            --user: #3b6ea5;
+            --ai: #6f52c0;
+            --accent: #707892;
+            --accent2: #4a5468;
+            --accent-rgb: 112, 120, 146;
+            --on-accent: #ffffff;          /* 银灰 accent 较深，故用白字 */
+            --ok: #3f9e6a;
+            --warn: #c0603f;
         }
 
         * { box-sizing: border-box; }
@@ -113,7 +115,7 @@
         button:focus { outline: none; }        /* [MP] 去掉点完残留的焦点框 */
         button:active:not(:disabled) { border-color: var(--accent); transform: translateY(1px); } /* [MP] 只在按下瞬间给反馈 */
         button:disabled { opacity: .4; cursor: not-allowed; }
-        button.primary { background: var(--accent); color: #151518; border-color: var(--accent); font-weight: 600; }
+        button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
         /* [MP-美化] 主按钮 hover 提亮 */
         @media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--accent2); border-color: var(--accent2); } }
 
@@ -177,7 +179,7 @@
         .srow label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
         .srow.inline label { display: flex; align-items: center; gap: 4px; margin-bottom: 0; }
         .panel select { background: var(--panel2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 6px 8px; font-size: 14px; }
-        .api-status { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 15px; font-weight: 600; line-height: 1.4; word-break: break-all; background: #2a2a2a; color: var(--muted); border: 1px solid var(--line); }
+        .api-status { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 15px; font-weight: 600; line-height: 1.4; word-break: break-all; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
         .api-status.busy { background: #3a3320; color: #ffd479; border-color: #7a6a30; }
         .api-status.ok { background: #1e3a24; color: #7ee08a; border-color: #2f7a3f; }
         .api-status.err { background: #3a1e1e; color: #ff8a8a; border-color: #7a2f2f; }
@@ -248,7 +250,7 @@
         .badge { font-size: 12px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
         .badge.user { background: var(--user); color: #fff; }
         .badge.ai { background: var(--ai); color: #fff; }
-        .badge.hidden { background: #555; color: #ccc; }
+        .badge.hidden { background: var(--panel3); color: var(--muted); }
         .floor-meta { font-size: 12px; color: var(--muted); }
         .floor-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
@@ -342,15 +344,15 @@
         .pl.moved::before, .pi.moved { color: #e6b04d; }
         .pl.edited::before, .pi.edited { color: #6aa6ff; }
         .pl.orphan::before, .pi.orphan { color: #ff6a6a; }
-        .prose-row { border: 1px solid #33333a; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+        .prose-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
         .prose-row .pr-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .prose-row .pi { font-weight: 600; }
         .prose-row .pr-prev { color: #9a9aa6; margin-top: 4px; word-break: break-word; }
-        .prose-row .pr-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: #17171b; border-radius: 5px; }
+        .prose-row .pr-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: var(--panel2); border-radius: 5px; }
         .prose-row .spacer { flex: 1; }
         /* [MP] 存档总览行 */
-        .arc-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 6px 10px; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 6px; }
-        .arc-row.cur { border-color: #6fcf7f; background: #16211a; }
+        .arc-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; }
+        .arc-row.cur { border-color: var(--ok); background: rgba(95, 184, 122, 0.12); }
         .arc-row .arc-name { font-weight: 600; word-break: break-all; }
         .arc-row .arc-bits { flex: 1; text-align: right; }
         /* [MP] 注入落点标记线 */
@@ -360,7 +362,7 @@
         .inject-marker .im-sub { color: #9a9aa6; font-size: 12px; margin-top: 2px; }
         .inject-marker .im-detail { margin-top: 6px; }
         .inject-marker .im-detail summary { cursor: pointer; color: #c9c9d4; }
-        .inject-marker .im-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: #17171b; border-radius: 5px; max-height: 240px; overflow: auto; }
+        .inject-marker .im-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px; background: var(--panel2); border-radius: 5px; max-height: 240px; overflow: auto; }
 
         /* [MP] 侧边栏 + 视图切换 */
         .menu-btn { font-size: 18px; line-height: 1; padding: 5px 11px; }
@@ -2175,7 +2177,7 @@
         // 新增主题：往 MP_THEMES 加一行 + 在 <style> 里补一段 :root[data-theme="key"]{...} 色板即可
         const MP_THEMES = [
             { key: 'honey',    name: '蜜金', swatch: ['#151518', '#d4a03a', '#e8c06a', '#8a6cd0'] },
-            { key: 'platinum', name: '白金', swatch: ['#131417', '#c8cfdb', '#eef1f6', '#9d8adb'] },
+            { key: 'platinum', name: '白金', swatch: ['#e8eaef', '#707892', '#4a5468', '#6f52c0'] },
         ];
         function currentTheme() { try { return localStorage.getItem('mp_theme') || 'honey'; } catch (e) { return 'honey'; } }
         function applyTheme(key) {
