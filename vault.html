@@ -31,22 +31,22 @@
             --gap: 12px;
         }
 
-        /* [MP-美化] 白金色系：珍珠白亮底 + 冷银灰 accent + 深字 */
+        /* [MP-美化] 白金色系：暖香槟白底 + 真金 accent + 深字 */
         :root[data-theme="platinum"] {
-            --bg: #e8eaef;
-            --panel: #f7f8fb;
-            --panel2: #edeef3;
-            --panel3: #e1e4eb;
-            --ink: #242833;
-            --muted: #6d7486;
-            --line: #d5d9e2;
-            --user: #3b6ea5;
-            --ai: #6f52c0;
-            --accent: #707892;
-            --accent2: #4a5468;
-            --accent-rgb: 112, 120, 146;
-            --on-accent: #ffffff;          /* 银灰 accent 较深，故用白字 */
-            --ok: #3f9e6a;
+            --bg: #f2ede2;
+            --panel: #faf6ec;
+            --panel2: #f1ebdc;
+            --panel3: #e9e1cd;
+            --ink: #2f2a20;
+            --muted: #8a7d63;
+            --line: #e2d9c4;
+            --user: #a17a2a;
+            --ai: #8f6ac4;
+            --accent: #c19a3e;
+            --accent2: #a67c1f;
+            --accent-rgb: 193, 154, 62;
+            --on-accent: #ffffff;          /* 金底较深，用白字压得住 */
+            --ok: #4a9e6a;
             --warn: #c0603f;
         }
 
@@ -2177,7 +2177,7 @@
         // 新增主题：往 MP_THEMES 加一行 + 在 <style> 里补一段 :root[data-theme="key"]{...} 色板即可
         const MP_THEMES = [
             { key: 'honey',    name: '蜜金', swatch: ['#151518', '#d4a03a', '#e8c06a', '#8a6cd0'] },
-            { key: 'platinum', name: '白金', swatch: ['#e8eaef', '#707892', '#4a5468', '#6f52c0'] },
+            { key: 'platinum', name: '白金', swatch: ['#f2ede2', '#c19a3e', '#a67c1f', '#8f6ac4'] },
         ];
         function currentTheme() { try { return localStorage.getItem('mp_theme') || 'honey'; } catch (e) { return 'honey'; } }
         function applyTheme(key) {
