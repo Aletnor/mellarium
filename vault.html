@@ -441,6 +441,54 @@
         .view { display: none; }
         .view.active { display: block; }
 
+        /* [MP] ========== 侧边栏角色树 ========== */
+        .char-tree { overflow-y: auto; }
+        .char-tree .empty { padding: 12px 14px; font-size: 13px; }
+        .ct-card { margin: 1px 0; }
+        .ct-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; border-left: 3px solid transparent; }
+        @media (hover: hover) { .ct-head:hover { background: var(--panel2); } }
+        .ct-card.cur > .ct-head { border-left-color: var(--accent); }
+        .ct-caret { color: var(--muted); font-size: 10px; transition: transform .15s; }
+        .ct-card.open > .ct-head .ct-caret { transform: rotate(90deg); }
+        .ct-name { flex: 1; font-weight: 600; color: var(--ink); word-break: break-all; font-size: 14px; }
+        .ct-count { color: var(--accent); font-size: 12px; }
+        .ct-body { display: none; padding: 2px 0 4px; }
+        .ct-card.open > .ct-body { display: block; }
+        .ct-chat { display: block; width: 100%; text-align: left; background: transparent; border: none; border-left: 3px solid transparent; color: var(--muted); padding: 7px 12px 7px 28px; font-size: 13px; cursor: pointer; word-break: break-all; }
+        @media (hover: hover) { .ct-chat:hover { background: var(--panel2); } }
+        .ct-chat.sel { color: var(--accent); border-left-color: var(--accent); background: var(--panel2); font-weight: 600; }
+        .ct-chat .ct-live { color: var(--ok); font-size: 11px; margin-left: 5px; }
+        .ct-chat .ct-cbits { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; font-weight: 400; }
+
+        /* [MP] ========== 屏幕切换（工作区 / 副API设置） ========== */
+        .screen { display: none; }
+        .screen.active { display: block; }
+
+        /* [MP] ========== 抽屉 ========== */
+        #workspace { padding: 0; }
+        .drawer { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+        .drawer-handle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--accent); padding: 9px; margin-top: 12px; font-weight: 600; cursor: pointer; }
+        @media (hover: hover) { .drawer-handle:hover { border-color: var(--accent); } }
+        .drawer .dh-caret { transition: transform .15s; }
+        .drawer:not(.collapsed) .dh-caret { transform: rotate(180deg); }
+        .drawer-panel { border: 1px solid var(--line); border-top: none; border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 12px 14px; background: var(--panel); }
+        .drawer.collapsed .drawer-panel { display: none; }
+        .drawer-ro { display: none; background: rgba(var(--accent-rgb), .1); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 10px; line-height: 1.5; }
+        .drawer.readonly .drawer-ro { display: block; }
+        .drawer-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+        .dtab { flex: 1; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 14px; cursor: pointer; }
+        .dtab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .dpane { display: none; }
+        .dpane.active { display: block; }
+        .pane-meta { margin-bottom: 8px; }
+        .codex-viz .empty { padding: 12px; font-size: 13px; }
+        .codex-viz h2 { font-size: 15px; color: var(--accent); margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+        .codex-viz h2:first-child { margin-top: 0; }
+        .codex-viz table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; display: block; overflow-x: auto; }
+        .codex-viz th, .codex-viz td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+        .codex-viz th { background: var(--panel2); color: var(--ink); font-weight: 600; white-space: nowrap; }
+        .codex-viz pre { white-space: pre-wrap; background: var(--panel2); padding: 10px; border-radius: 6px; font-size: 13px; }
+
         @media (min-width: 900px) {
             #sidebar { transform: none; }
             #overlay { display: none !important; }
@@ -468,13 +516,11 @@
     <div id="overlay"></div>
     <nav id="sidebar">
         <div class="nav-title">蜜脾</div>
-        <button class="nav-item active" data-view="v-text">正文浏览</button>
-        <button class="nav-item" data-view="v-sum">总结</button>
-        <button class="nav-item" data-view="v-codex">信息档案</button>
-        <button class="nav-item" data-view="v-overview">存档总览</button>
+        <!-- [MP] 角色树：一排角色卡→点开展开该角色名下有蜜脾记录的对话 -->
+        <div id="char-tree" class="char-tree"><div class="empty">等待桥定位…</div></div>
         <div class="nav-spring"></div>
         <div id="tools-group" class="tools-group">
-            <button class="nav-item sub" data-view="v-settings">副API设置</button>
+            <button class="nav-item sub" id="nav-settings">副API设置</button>
             <button id="btn-export" class="nav-item sub" title="三表全量导出为JSON">导出全部</button>
             <button id="btn-import" class="nav-item sub">导入</button>
             <button id="btn-debug" class="nav-item sub" title="手机无控制台时看这里">调试日志</button>
@@ -484,7 +530,7 @@
         <!-- [MP-美化] 外观（主题）入口 -->
         <button id="btn-theme" class="nav-item nav-gear">◈ 外观</button>
         <!-- [MP-美化] 版本号 -->
-        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.2.0</div>
+        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.3.0</div>
     </nav>
 
     <!-- [MP-美化] 外观（主题）弹窗 -->
@@ -512,109 +558,98 @@
 
     <div class="dirty-banner" id="dirty">聊天数据已变化，点击刷新快照</div>
 
-    <!-- [MP] 正文浏览视图 -->
-    <section class="view active" id="v-text">
-    <div class="toolbar">
-        <label><input type="checkbox" id="f-ai" /> 只看AI楼</label>
-        <label><input type="checkbox" id="f-saved" /> 只看已存档</label>
-        <label>检索 <input type="text" id="f-kw" placeholder="关键字…" /></label>
-        <span class="floor-meta" id="stat"></span>
+    <!-- [MP] 工作区：抽屉(档案/总结/可视化) 悬在正文之上 -->
+    <div id="workspace" class="screen active">
+        <!-- 抽屉 -->
+        <div id="drawer" class="drawer collapsed">
+            <button id="drawer-handle" class="drawer-handle">
+                <span class="dh-caret">▽</span><span class="dh-label">抽屉 · 档案 / 总结 / 可视化</span>
+            </button>
+            <div class="drawer-panel">
+                <div class="drawer-ro" id="drawer-ro">只读：这是历史存档对话（不是酒馆里正在打开的那个）。要新建总结、更新档案或开注入，请先在酒馆里打开它。</div>
+                <div class="drawer-tabs">
+                    <button class="dtab active" data-dtab="codex">档案</button>
+                    <button class="dtab" data-dtab="sum">总结</button>
+                    <button class="dtab" data-dtab="viz">可视化</button>
+                </div>
+                <div class="drawer-body">
+                    <!-- 档案 -->
+                    <div class="dpane active" id="dpane-codex">
+                        <div class="pane-meta"><span class="floor-meta" id="codex-meta"></span></div>
+                        <details class="prompt-fold top">
+                            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
+                            <textarea id="s-codex-prompt" rows="6"></textarea>
+                        </details>
+                        <div class="srow inline">
+                            <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
+                            <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
+                            <button class="primary" id="btn-codex-gen">AI更新档案</button>
+                            <span class="floor-meta" id="codex-stat"></span>
+                        </div>
+                        <textarea id="codex-text" rows="12"
+                            placeholder="设定档案·固定四表（角色档案 / 世界设定 / 地点场景 / 线索悬念），Markdown 表格。可手动编辑，或用上面的AI更新从区间原文提炼并入。"></textarea>
+                        <div class="srow inline">
+                            <button class="primary" id="btn-codex-save">保存档案</button>
+                            <button id="btn-codex-revert" disabled title="还原到上一次AI更新/保存前的版本">还原上一版</button>
+                        </div>
+                        <div class="srow inline inject-row">
+                            <label><input type="checkbox" id="inj-enabled" /> 开启注入（档案 + 最新一卷总结）</label>
+                            <label>位置
+                                <select id="inj-pos">
+                                    <option value="1">聊天内深度</option>
+                                    <option value="0">最前（故事后·聊天前）</option>
+                                </select>
+                            </label>
+                            <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
+                            <span class="floor-meta" id="inj-stat"></span>
+                        </div>
+                    </div>
+                    <!-- 总结 -->
+                    <div class="dpane" id="dpane-sum">
+                        <div class="pane-meta"><span class="floor-meta" id="lastvol"></span></div>
+                        <details class="prompt-fold top">
+                            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
+                            <textarea id="s-prompt" rows="6"></textarea>
+                        </details>
+                        <div class="summary-work">
+                            <div class="srow inline">
+                                <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
+                                <label>结束楼 <input type="number" id="sum-end" min="0" style="width:80px" /></label>
+                                <button class="primary" id="btn-gen">生成总结</button>
+                                <span class="floor-meta" id="gen-stat"></span>
+                            </div>
+                            <textarea id="sum-result" rows="8" placeholder="生成的总结会出现在这里，可自行编辑后入库…"></textarea>
+                            <div class="srow inline">
+                                <button id="btn-save-summary" disabled>仅保存入库</button>
+                                <button id="btn-apply" disabled title="把区间折叠成总结，改动酒馆真实存档(可逆)">保存并执行替换隐藏</button>
+                            </div>
+                        </div>
+                        <div class="summary-history" id="sum-history"></div>
+                    </div>
+                    <!-- 可视化四表 -->
+                    <div class="dpane" id="dpane-viz">
+                        <div class="codex-viz" id="codex-viz"><div class="empty">选一个对话，这里把它档案里的四张表画出来。</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 正文筛选（仅当前在线对话可用） -->
+        <div class="toolbar" id="prose-toolbar">
+            <label><input type="checkbox" id="f-ai" /> 只看AI楼</label>
+            <label><input type="checkbox" id="f-saved" /> 只看已存档</label>
+            <label>检索 <input type="text" id="f-kw" placeholder="关键字…" /></label>
+            <span class="floor-meta" id="stat"></span>
+        </div>
+
+        <main id="main">
+            <div class="empty">左侧点开角色卡→选一个对话，正文会显示在这里。</div>
+        </main>
     </div>
 
-    <main id="main">
-        <div class="empty">等待桥上线并定位聊天…</div>
-    </main>
-    </section>
-
-    <!-- [MP] 总结视图 -->
-    <section class="view panel" id="v-sum">
-        <div class="panel-head">
-            <span class="panel-title">总结区</span>
-            <span class="floor-meta" id="lastvol"></span>
-        </div>
-
-        <!-- [MP-美化] 提示词挪到板块顶部，先看规则再生成 -->
-        <details class="prompt-fold top">
-            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
-            <textarea id="s-prompt" rows="6"></textarea>
-        </details>
-
-        <div class="summary-work">
-            <div class="srow inline">
-                <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
-                <label>结束楼 <input type="number" id="sum-end" min="0" style="width:80px" /></label>
-                <button class="primary" id="btn-gen">生成总结</button>
-                <span class="floor-meta" id="gen-stat"></span>
-            </div>
-            <textarea id="sum-result" rows="8" placeholder="生成的总结会出现在这里，可自行编辑后入库…"></textarea>
-            <div class="srow inline">
-                <button id="btn-save-summary" disabled>仅保存入库</button>
-                <button id="btn-apply" disabled title="把区间折叠成总结，改动酒馆真实存档(可逆)">保存并执行替换隐藏</button>
-            </div>
-        </div>
-
-        <div class="summary-history" id="sum-history"></div>
-    </section>
-
-    <!-- [MP] 信息档案视图（第3期） -->
-    <section class="view panel" id="v-codex">
-        <div class="panel-head">
-            <span class="panel-title">信息档案</span>
-            <span class="floor-meta" id="codex-meta"></span>
-        </div>
-
-        <!-- [MP-美化] 提示词挪到板块顶部，先看规则再生成 -->
-        <details class="prompt-fold top">
-            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
-            <textarea id="s-codex-prompt" rows="6"></textarea>
-        </details>
-
-        <div class="srow inline">
-            <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
-            <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
-            <button class="primary" id="btn-codex-gen">AI更新档案</button>
-            <span class="floor-meta" id="codex-stat"></span>
-        </div>
-        <textarea id="codex-text" rows="12"
-            placeholder="设定档案·固定四表（角色档案 / 世界设定 / 地点场景 / 线索悬念），Markdown 表格。可手动编辑，或用上面的AI更新从区间原文提炼并入。"></textarea>
-        <div class="srow inline">
-            <button class="primary" id="btn-codex-save">保存档案</button>
-            <button id="btn-codex-revert" disabled title="还原到上一次AI更新/保存前的版本">还原上一版</button>
-        </div>
-        <div class="srow inline inject-row">
-            <label><input type="checkbox" id="inj-enabled" /> 开启注入（档案 + 最新一卷总结）</label>
-            <label>位置
-                <select id="inj-pos">
-                    <option value="1">聊天内深度</option>
-                    <option value="0">最前（故事后·聊天前）</option>
-                </select>
-            </label>
-            <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
-            <span class="floor-meta" id="inj-stat"></span>
-        </div>
-    </section>
-
-    <!-- [MP] 存档总览视图：先列各聊天各自的档，再展开当前聊天的正文明细 -->
-    <section class="view panel" id="v-overview">
-        <div class="panel-head">
-            <span class="panel-title">存档总览</span>
-            <span class="floor-meta" id="prose-meta"></span>
-        </div>
-        <div class="floor-meta" style="margin:4px 0 8px">按角色分组，点开卡片看该角色名下有蜜脾记录的对话：</div>
-        <div id="archive-overview"></div>
-        <div class="panel-title" style="margin:14px 0 6px;font-size:13px">当前聊天的正文明细</div>
-        <div class="prose-legend floor-meta">
-            <span class="pl exact">对上·内容一致</span>
-            <span class="pl moved">位置变了</span>
-            <span class="pl edited">同楼·正文改过</span>
-            <span class="pl orphan">对不上·孤儿</span>
-        </div>
-        <div id="prose-list"></div>
-    </section>
-
-    <!-- [MP] 副API设置视图（从总结区搬出，工具里进入） -->
-    <section class="view panel" id="v-settings">
-        <div class="panel-head"><span class="panel-title">副API设置</span></div>
+    <!-- [MP] 副API设置屏（工具里进入） -->
+    <section class="screen panel" id="v-settings">
+        <div class="panel-head"><button id="settings-back" class="icon-btn" title="返回">← 返回</button><span class="panel-title">副API设置</span></div>
         <div id="settings-box">
             <div class="srow inline"><label>已存地址</label>
                 <select id="s-preset"></select>
@@ -696,6 +731,8 @@
         let bridgeTimer = null;
         let currentChatKey = null;
         let snapshot = null; // {chatKey, messages[], count}
+        let selectedChatKey = null; // [MP] 侧边栏当前选中的对话（可能是历史存档，未必是在线的那个）
+        function selectedIsLive() { return !!selectedChatKey && selectedChatKey === currentChatKey; }
 
         function post(type, payload) {
             channel.postMessage({ type, chatKey: currentChatKey, payload: payload ?? null });
@@ -746,9 +783,9 @@
                         snapshot = msg.payload;
                         setChatKey(msg.payload.chatKey);
                         hideDirty();
-                        await render();
-                        await renderCodex();            // [MP] 先载入本聊天档案（refreshInjection 要读框里的值）
-                        await renderSummaryHistory();   // [MP] 末尾会按需 refreshInjection
+                        selectedChatKey = currentChatKey;   // [MP] 快照回来自动选中在线对话
+                        await renderCharTree();
+                        await selectChat(currentChatKey);   // [MP] 渲染正文+抽屉(档案/总结/可视化)
                         mpMark('★5 快照render完成');
                     }
                     break;
@@ -1174,13 +1211,14 @@
         // [MP] 生成两阶段：①问桥要区间原文（秒回的短活，桥就算在后台也顶得住）②网页自己直连副API发总结
         //      长请求留在前台网页发，手机切来切去都不会把它冻死；桥只干读原文这种一秒钟的活。
         document.getElementById('btn-gen').onclick = () => {
+            if (!selectedIsLive()) { toast('这是历史存档对话，只读。要生成总结请在酒馆里打开它'); return; }
             if (genReqId !== 0) { toast('已有一段在生成中，等它回来或超时再点'); return; } // [MP] 在飞就别再发
             if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('sum-start').value, 10);
             const re = parseInt(document.getElementById('sum-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
             const cfg = apiConfigFromUI();
-            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); setView('v-settings'); return; }
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; return; }
             const reqId = ++genReqSeq;
             genReqId = reqId;                 // [MP] 记下这一发的号，只认它的回包
             genPhase = 'range';               // [MP] 第一阶段：等桥给原文
@@ -1449,6 +1487,7 @@
                 summaryText: text, applied: !!applied,
                 createdAt: new Date().toISOString(),
             }));
+            renderCharTree();   // [MP] 卷数变了刷新侧栏
             return { id, volume };
         }
 
@@ -1677,21 +1716,24 @@
             post('get-snapshot');      // 后台兜底对账
         }
 
-        async function renderSummaryHistory() {
+        async function renderSummaryHistory(chatKey) {
+            chatKey = chatKey || selectedChatKey;
             const box = document.getElementById('sum-history');
             box.innerHTML = '';
-            if (!currentChatKey) return;
-            const rows = await summariesForChat(currentChatKey);
+            document.getElementById('lastvol').textContent = '';
+            if (!chatKey) return;
+            const live = chatKey === currentChatKey;   // [MP] 只有在线对话才能替换隐藏/还原
+            const rows = await summariesForChat(chatKey);
             let lastEnd = -1;
             rows.forEach(r => {
                 if (typeof r.rangeEnd === 'number') lastEnd = Math.max(lastEnd, r.rangeEnd);
                 const div = document.createElement('div');
                 div.className = 'sum-item';
-                const actions =
+                const actions = !live ? '' : (
                     (!r.applied ? ` <button class="mp-apply-saved" data-id="${r.id}">执行替换隐藏</button>` : '') +
                     (r.applied && r.revert ? ` <button class="mp-revert" data-id="${r.id}">还原正文</button>` : '') +
                     (r.applied && !r.revert ? ' <span class="floor-meta">（旧数据无还原信息）</span>' : '') +
-                    ` <button class="mp-del-sum" data-id="${r.id}">删除</button>`;
+                    ` <button class="mp-del-sum" data-id="${r.id}">删除</button>`);
                 div.innerHTML =
                     `<div class="meta"><b>第${r.volume}卷</b> · ${r.rangeStart}~${r.rangeEnd}楼 · ${new Date(r.createdAt).toLocaleString()}` +
                     (r.applied ? ' <span class="applied">已替换</span>' : '') +
@@ -1702,8 +1744,8 @@
             });
             document.getElementById('lastvol').textContent = rows.length
                 ? `已有${rows.length}卷，上一卷覆盖到 ${lastEnd}楼（仅参考）` : '暂无总结';
-            // [MP] 总结集合变化（保存/替换/还原/快照）后，若注入开启则同步刷新注入
-            if (injEnabled) { try { await refreshInjection(); } catch (e) { dlog('刷新注入失败: ' + (e && e.message || e), true); } }
+            // [MP] 总结集合变化（保存/替换/还原/快照）后，若注入开启则同步刷新注入（仅在线对话）
+            if (injEnabled && live) { try { await refreshInjection(); } catch (e) { dlog('刷新注入失败: ' + (e && e.message || e), true); } }
         }
 
         // [MP] ============ 信息档案 + 注入（第3期）============
@@ -1715,14 +1757,28 @@
             return await idbReq(tx('codex', 'readonly').get(chatKey));
         }
 
-        async function renderCodex() {
+        async function renderCodex(chatKey) {
+            chatKey = chatKey || selectedChatKey;
             const ta = document.getElementById('codex-text');
-            const rec = currentChatKey ? await loadCodexRecord(currentChatKey) : null;
+            const rec = chatKey ? await loadCodexRecord(chatKey) : null;
             ta.value = (rec && rec.docText) ? rec.docText : '';
             document.getElementById('btn-codex-revert').disabled = !(rec && rec.prevDocText);
-            document.getElementById('codex-meta').textContent = currentChatKey
-                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}` : '本聊天暂无档案')
-                : '未定位聊天';
+            document.getElementById('codex-meta').textContent = chatKey
+                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}` : '本对话暂无档案')
+                : '未选择对话';
+            await renderViz(chatKey);   // [MP] 档案变了顺手刷可视化
+        }
+
+        // [MP] 可视化四表：把档案里的 markdown（## 表名 + 表格）渲染成真表
+        async function renderViz(chatKey) {
+            chatKey = chatKey || selectedChatKey;
+            const wrap = document.getElementById('codex-viz');
+            if (!wrap) return;
+            const rec = chatKey ? await loadCodexRecord(chatKey) : null;
+            const doc = ((rec && rec.docText) || '').trim();
+            if (!doc) { wrap.innerHTML = '<div class="empty">这个对话还没有档案。到「档案」页用AI更新或手动填写后，这里会把四张表画出来。</div>'; return; }
+            const r = renderMd(doc);
+            wrap.innerHTML = r.plain ? ('<pre>' + esc(doc) + '</pre>') : r.html;
         }
 
         // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版
@@ -1736,6 +1792,7 @@
                 prevDocText: keepPrev ? ((old && old.docText) || '') : ((old && old.prevDocText) || ''),
             };
             await idbReq(tx('codex', 'readwrite').put(rec));
+            renderCharTree();   // [MP] 档案有无变了刷新侧栏
             return rec;
         }
 
@@ -1784,7 +1841,7 @@
         document.getElementById('btn-codex-save').onclick = async () => {
             if (codexSaveBusy) return; codexSaveBusy = true;
             try {
-                if (!currentChatKey) { toast('未定位聊天'); return; }
+                if (!selectedIsLive()) { toast('历史存档对话只读，请在酒馆里打开它再编辑档案'); return; }
                 await saveCodexDoc(document.getElementById('codex-text').value, true);
                 toast('档案已保存');
                 await renderCodex();
@@ -1795,7 +1852,7 @@
 
         // 还原上一版（与当前互换，可来回切）
         document.getElementById('btn-codex-revert').onclick = async () => {
-            if (!currentChatKey) { toast('未定位聊天'); return; }
+            if (!selectedIsLive()) { toast('历史存档对话只读'); return; }
             const rec = await loadCodexRecord(currentChatKey);
             if (!rec || !rec.prevDocText) { toast('没有可还原的上一版'); return; }
             const restored = {
@@ -1810,13 +1867,14 @@
 
         // AI更新档案：两阶段，跟总结同一条路（桥取原文→前台直发副API），长请求不被手机冻
         document.getElementById('btn-codex-gen').onclick = () => {
+            if (!selectedIsLive()) { toast('这是历史存档对话，只读。要AI更新档案请在酒馆里打开它'); return; }
             if (codexReqId !== 0) { toast('档案更新已在进行，等它回来或超时'); return; }
             if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('codex-start').value, 10);
             const re = parseInt(document.getElementById('codex-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
             const cfg = apiConfigFromUI();
-            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); setView('v-settings'); return; }
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; return; }
             const reqId = ++genReqSeq;
             codexReqId = reqId; codexCfg = cfg;
             codexExistingDoc = document.getElementById('codex-text').value || '';
@@ -2065,6 +2123,7 @@
                 });
                 toast(`已存档 ${m.floorIndex}楼·版本${swipeIndex}`);
                 await render();
+                renderCharTree();   // [MP] 正文条数变了刷新侧栏
             } catch (e) {
                 toast('存档失败: ' + (e && e.message || e));
             }
@@ -2132,13 +2191,97 @@
             const s = (k || '').indexOf('/');
             return s >= 0 ? { char: k.slice(0, s), chat: k.slice(s + 1) } : { char: k || '', chat: '' };
         }
-        async function renderArchiveOverview() {
-            const wrap = document.getElementById('archive-overview');
+        // [MP] ============ 侧边栏角色树 / 屏幕切换 ============
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+        function showScreen(name) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === name));
+        }
+        function titleForSelected() {
+            if (!selectedChatKey) return '蜜脾';
+            const { char, chat } = splitChatKey(selectedChatKey);
+            return (chat || char || '') + (selectedIsLive() ? '' : ' · 存档');
+        }
+
+        // [MP] 抽屉只读态：非在线对话时禁掉一切生成/编辑控件，只能看
+        function setDrawerReadonly(ro) {
+            const d = document.getElementById('drawer');
+            if (d) d.classList.toggle('readonly', !!ro);
+            const always = ['codex-start', 'codex-end', 'btn-codex-gen', 'codex-text', 'btn-codex-save',
+                'inj-enabled', 'inj-pos', 'inj-depth', 'sum-start', 'sum-end', 'btn-gen', 'sum-result'];
+            always.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
+            if (ro) ['btn-codex-revert', 'btn-save-summary', 'btn-apply'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
+        }
+
+        // [MP] 历史存档对话的正文（只读，取自蜜脾正文库；实时楼层要在酒馆打开它才看得到）
+        async function renderArchivedProse(chatKey) {
+            const main = document.getElementById('main');
+            const rows = await proseForChat(chatKey);
+            rows.sort((a, b) => (a.floorIndex - b.floorIndex) || (a.swipeIndex - b.swipeIndex) || (a.id - b.id));
+            document.getElementById('stat').textContent = `历史存档 · 正文 ${rows.length} 条（只读）`;
+            if (!rows.length) {
+                main.innerHTML = '<div class="empty">这个对话没有存档正文。要看它的实时楼层，请在酒馆里打开它。</div>';
+                return;
+            }
+            const frag = document.createDocumentFragment();
+            rows.forEach(rec => {
+                const floor = document.createElement('div'); floor.className = 'floor';
+                const head = document.createElement('div'); head.className = 'floor-head';
+                head.innerHTML =
+                    '<span class="badge ai">存档</span>' +
+                    `<span class="floor-meta">${rec.floorIndex}楼·版本${rec.swipeIndex}${rec.isChosen ? '·采用' : ''} · ${rec.savedAt ? new Date(rec.savedAt).toLocaleString() : ''}</span>` +
+                    `<span class="floor-preview">${esc(textPrefix80(rec.content))}</span>`;
+                const box = document.createElement('div'); box.className = 'swipes';
+                let built = false;
+                const build = () => {
+                    if (built) return; built = true;
+                    const bar = document.createElement('div'); bar.className = 'swipe-bar';
+                    const del = document.createElement('button'); del.textContent = '删除这条存档';
+                    del.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (!confirm(`删除这条存档？（存于${rec.floorIndex}楼·版本${rec.swipeIndex}）\n只删蜜脾相册里的这张照片，不动酒馆。`)) return;
+                        try { await delProse(rec.id); toast('已删除该存档'); renderCharTree(); await renderArchivedProse(chatKey); }
+                        catch (e2) { toast('删除失败: ' + (e2 && e2.message || e2)); }
+                    };
+                    bar.appendChild(del); box.appendChild(bar);
+                    const b = document.createElement('div'); const r = renderMd(rec.content);
+                    b.className = 'swipe-body' + (r.plain ? ' plain' : ''); b.innerHTML = r.html;
+                    box.appendChild(b);
+                };
+                head.onclick = () => { if (!floor.classList.contains('open')) build(); floor.classList.toggle('open'); };
+                floor.appendChild(head); floor.appendChild(box); frag.appendChild(floor);
+            });
+            main.innerHTML = ''; main.appendChild(frag);
+        }
+
+        // [MP] 选中一个对话：在线→实时正文+可编辑抽屉；存档→只读正文+只读抽屉
+        async function selectChat(chatKey) {
+            if (!chatKey) return;
+            selectedChatKey = chatKey;
+            const live = selectedIsLive();
+            document.getElementById('view-title').textContent = titleForSelected();
+            document.querySelectorAll('.ct-chat').forEach(b => b.classList.toggle('sel', b.dataset.key === chatKey));
+            const tb = document.getElementById('prose-toolbar'); if (tb) tb.style.display = live ? '' : 'none';
+            if (live) await render(); else await renderArchivedProse(chatKey);
+            await renderCodex(chatKey);
+            await renderSummaryHistory(chatKey);
+            await renderViz(chatKey);
+            setDrawerReadonly(!live);
+            showScreen('workspace');
+            closeSidebar();
+        }
+
+        // [MP] 侧边栏角色树：一排角色卡→点开展开该角色名下有蜜脾记录（或正在线）的对话
+        async function renderCharTree() {
+            const wrap = document.getElementById('char-tree');
             if (!wrap) return;
             const list = await allArchiveKeys();
-            wrap.innerHTML = '';
-            if (!list.length) { wrap.innerHTML = '<div class="empty">还没有任何聊天存过档</div>'; return; }
-            // 按角色名分组
+            if (currentChatKey && !list.some(r => r.chatKey === currentChatKey)) {
+                list.push({ chatKey: currentChatKey, prose: 0, vols: 0, codex: false });
+            }
+            if (!list.length) { wrap.innerHTML = '<div class="empty">还没有对话记录。到酒馆打开一个聊天，或先在这里存档、建档。</div>'; return; }
             const groups = new Map();
             list.forEach(rec => {
                 const { char, chat } = splitChatKey(rec.chatKey);
@@ -2146,113 +2289,53 @@
                 groups.get(char).push(Object.assign({ chat }, rec));
             });
             const curChar = currentChatKey ? splitChatKey(currentChatKey).char : null;
-            Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(char => {
-                const chats = groups.get(char);
-                const isCurChar = !!curChar && char === curChar;
-                const totProse = chats.reduce((n, c) => n + c.prose, 0);
-                const totVols = chats.reduce((n, c) => n + c.vols, 0);
-                const card = document.createElement('div');
-                card.className = 'char-card' + (isCurChar ? ' cur open' : '');
-                const head = document.createElement('div');
-                head.className = 'char-head';
-                head.innerHTML =
-                    `<span class="cc-caret">▶</span>` +
-                    `<span class="cc-name">${esc(char || '(未知角色)')}</span>` +
-                    `<span class="cc-badge">${chats.length} 对话</span>` +
-                    `<span class="cc-sum">正文 ${totProse} · 总结 ${totVols}卷</span>`;
-                head.onclick = () => card.classList.toggle('open');
-                const body = document.createElement('div');
-                body.className = 'char-body';
-                chats.sort((a, b) => a.chat.localeCompare(b.chat)).forEach(c => {
-                    const cur = c.chatKey === currentChatKey;
-                    const row = document.createElement('div');
-                    row.className = 'arc-row' + (cur ? ' cur' : '');
-                    const bits = [`正文 ${c.prose}`, `总结 ${c.vols}卷`, c.codex ? '有档案' : '无档案'];
-                    row.innerHTML =
-                        `<span class="arc-name">${cur ? '▶ ' : ''}${esc(c.chat || '(无名对话)')}</span>` +
-                        `<span class="arc-bits floor-meta">${bits.join(' · ')}${cur ? ' · 正在看' : ''}</span>`;
-                    body.appendChild(row);
-                });
-                card.appendChild(head);
-                card.appendChild(body);
-                wrap.appendChild(card);
-            });
-        }
-
-        async function renderProseList() {
-            const wrap = document.getElementById('prose-list');
-            const meta = document.getElementById('prose-meta');
-            if (!currentChatKey) { wrap.innerHTML = '<div class="empty">未定位聊天</div>'; meta.textContent = ''; return; }
-            const rows = await proseForChat(currentChatKey);
-            rows.sort((a, b) => (a.floorIndex - b.floorIndex) || (a.swipeIndex - b.swipeIndex) || (a.id - b.id));
-            const messages = (snapshot && snapshot.messages) ? snapshot.messages : null;
-            let orphan = 0, drift = 0;
+            const selChar = selectedChatKey ? splitChatKey(selectedChatKey).char : null;
             wrap.innerHTML = '';
-            if (!rows.length) { wrap.innerHTML = '<div class="empty">这个聊天还没存过正文</div>'; meta.textContent = ''; return; }
-            rows.forEach(rec => {
-                const loc = locateProse(rec, messages);
-                if (loc.status === 'orphan') orphan++;
-                if (loc.status === 'moved' || loc.status === 'edited') drift++;
-                const row = document.createElement('div');
-                row.className = 'prose-row';
-                const statTxt = (PROSE_STATUS_TXT[loc.status] || PROSE_STATUS_TXT.unknown)(loc);
-                const head = document.createElement('div');
-                head.className = 'pr-head';
+            Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(char => {
+                const chats = groups.get(char).sort((a, b) => a.chat.localeCompare(b.chat));
+                const card = document.createElement('div');
+                const openCard = char === selChar || char === curChar;
+                card.className = 'ct-card' + (char === curChar ? ' cur' : '') + (openCard ? ' open' : '');
+                const head = document.createElement('div'); head.className = 'ct-head';
                 head.innerHTML =
-                    `<span class="pi ${loc.status}">${statTxt}</span>` +
-                    `<span class="floor-meta">存于 ${rec.floorIndex}楼·版本${rec.swipeIndex}${rec.isChosen ? '·存时采用' : ''} · ${rec.savedAt ? new Date(rec.savedAt).toLocaleString() : ''}</span>` +
-                    `<span class="spacer"></span>`;
-                const btnView = document.createElement('button');
-                btnView.textContent = '看正文';
-                const btnDel = document.createElement('button');
-                btnDel.textContent = '删除';
-                head.appendChild(btnView); head.appendChild(btnDel);
-                row.appendChild(head);
-                const prev = document.createElement('div');
-                prev.className = 'pr-prev';
-                prev.textContent = textPrefix80(rec.content) + '…';
-                row.appendChild(prev);
-                const full = document.createElement('div');
-                full.className = 'pr-full'; full.style.display = 'none';
-                full.textContent = rec.content || '';
-                row.appendChild(full);
-                btnView.onclick = () => {
-                    const open = full.style.display !== 'none';
-                    full.style.display = open ? 'none' : 'block';
-                    btnView.textContent = open ? '看正文' : '收起正文';
-                };
-                btnDel.onclick = async () => {
-                    if (!confirm(`删除这条存档？（存于${rec.floorIndex}楼·版本${rec.swipeIndex}）\n只删蜜脾相册里的这张照片，不动酒馆。`)) return;
-                    try { await delProse(rec.id); toast('已删除该存档'); await renderProseList(); await render(); }
-                    catch (e) { toast('删除失败: ' + (e && e.message || e)); }
-                };
-                wrap.appendChild(row);
+                    '<span class="ct-caret">▶</span>' +
+                    `<span class="ct-name">${esc(char || '(未知角色)')}</span>` +
+                    `<span class="ct-count">${chats.length}</span>`;
+                head.onclick = () => card.classList.toggle('open');
+                const body = document.createElement('div'); body.className = 'ct-body';
+                chats.forEach(c => {
+                    const live = c.chatKey === currentChatKey;
+                    const btn = document.createElement('button');
+                    btn.className = 'ct-chat' + (c.chatKey === selectedChatKey ? ' sel' : '');
+                    btn.dataset.key = c.chatKey;
+                    const bits = [`正文${c.prose}`, `总结${c.vols}卷`, c.codex ? '档案✓' : ''].filter(Boolean).join(' · ');
+                    btn.innerHTML =
+                        `<span>${esc(c.chat || '(无名对话)')}${live ? '<span class="ct-live">●在线</span>' : ''}</span>` +
+                        `<span class="ct-cbits">${bits || '（空）'}</span>`;
+                    btn.onclick = () => selectChat(c.chatKey);
+                    body.appendChild(btn);
+                });
+                card.appendChild(head); card.appendChild(body); wrap.appendChild(card);
             });
-            meta.textContent = `共${rows.length}条` +
-                (messages ? `（位置变/改过 ${drift}，孤儿 ${orphan}）` : '（先刷新快照才能核对位置）');
         }
 
-        function proseListOpen() { return document.getElementById('v-overview').classList.contains('active'); }
-
-        // [MP] ============ 侧边栏 / 视图切换 ============
-        const VIEW_TITLES = { 'v-text': '正文', 'v-sum': '总结', 'v-codex': '信息档案', 'v-overview': '存档总览', 'v-settings': '副API设置' };
-        function closeSidebar() {
-            document.getElementById('sidebar').classList.remove('open');
-            document.getElementById('overlay').classList.remove('show');
-        }
-        async function setView(name) {
-            document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === name));
-            document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-            document.getElementById('view-title').textContent = VIEW_TITLES[name] || '';
-            closeSidebar();
-            if (name === 'v-overview') { await renderArchiveOverview(); await renderProseList(); }
-        }
         document.getElementById('btn-menu').onclick = () => {
             document.getElementById('sidebar').classList.add('open');
             document.getElementById('overlay').classList.add('show');
         };
         document.getElementById('overlay').onclick = closeSidebar;
-        document.querySelectorAll('.nav-item[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+        // [MP] 副API设置：进设置屏 / 返回工作区
+        document.getElementById('nav-settings').onclick = () => { showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; closeSidebar(); };
+        document.getElementById('settings-back').onclick = () => { showScreen('workspace'); document.getElementById('view-title').textContent = titleForSelected(); };
+        // [MP] 抽屉拉开/收起
+        document.getElementById('drawer-handle').onclick = () => document.getElementById('drawer').classList.toggle('collapsed');
+        // [MP] 抽屉内页签：档案 / 总结 / 可视化
+        document.querySelectorAll('.dtab').forEach(b => b.onclick = () => {
+            const t = b.dataset.dtab;
+            document.querySelectorAll('.dtab').forEach(x => x.classList.toggle('active', x === b));
+            document.querySelectorAll('.dpane').forEach(p => p.classList.toggle('active', p.id === 'dpane-' + t));
+            if (t === 'viz') renderViz(selectedChatKey);
+        });
         // [MP] 齿轮展开/收起工具组
         document.getElementById('btn-tools').onclick = () => document.getElementById('tools-group').classList.toggle('show');
 
@@ -2414,7 +2497,8 @@
                 for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
                 for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
                 toast(`已导入 ${n} 条`);
-                await render();
+                await renderCharTree();   // [MP] 导入后刷新侧栏
+                if (selectedChatKey) await selectChat(selectedChatKey);
             } catch (err) {
                 toast('导入失败: ' + (err && err.message || err));
             } finally {
@@ -2437,6 +2521,7 @@
             dlog('vault启动，marked=' + (!!window.marked));
             try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
+            try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
             post('cancel-inflight'); // [MP] 先掐掉上次刷新前挂着的僵尸副API请求，再开工
             post('ping');
             dlog('已发ping，等桥应答');
