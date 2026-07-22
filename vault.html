@@ -184,17 +184,19 @@
         .api-status.ok { background: #1e3a24; color: #7ee08a; border-color: #2f7a3f; }
         .api-status.err { background: #3a1e1e; color: #ff8a8a; border-color: #7a2f2f; }
 
-        .panel input[type="text"], .panel input[type="password"], .panel input[type="number"], .panel textarea {
+        .panel input[type="text"], .panel input[type="password"], .panel input[type="number"], .panel textarea,
+        .drawer-panel input[type="text"], .drawer-panel input[type="password"], .drawer-panel input[type="number"], .drawer-panel textarea {
             background: var(--panel2);
             border: 1px solid var(--line);
             color: var(--ink);
             border-radius: 6px;
             padding: 6px 8px;
             width: 100%;
+            box-sizing: border-box;
             font: inherit;
         }
 
-        .panel textarea { resize: vertical; }
+        .panel textarea, .drawer-panel textarea { resize: vertical; }
         .summary-work textarea { margin: 8px 0; }
         /* [MP-美化] 输入聚焦蜜金描边 */
         input:focus, textarea:focus, select:focus {
@@ -467,7 +469,8 @@
         /* [MP] ========== 抽屉 ========== */
         #workspace { padding: 0; }
         .drawer { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
-        .drawer-handle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--accent); padding: 9px; margin-top: 12px; font-weight: 600; cursor: pointer; }
+        .drawer-handle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--accent); padding: 9px; margin-top: 12px; font-weight: 600; cursor: pointer; position: sticky; top: var(--hdr-h, 48px); z-index: 6; }
+        .drawer:not(.collapsed) .drawer-handle { border-radius: var(--radius-sm) var(--radius-sm) 0 0; border-bottom: none; }
         @media (hover: hover) { .drawer-handle:hover { border-color: var(--accent); } }
         .drawer .dh-caret { transition: transform .15s; }
         .drawer:not(.collapsed) .dh-caret { transform: rotate(180deg); }
@@ -480,7 +483,8 @@
         .dtab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
         .dpane { display: none; }
         .dpane.active { display: block; }
-        .pane-meta { margin-bottom: 8px; }
+        .pane-meta { margin: 0 0 6px; font-size: 12px; line-height: 1.4; }
+        .pane-meta:empty { display: none; }
         .codex-viz .empty { padding: 12px; font-size: 13px; }
         .codex-viz h2 { font-size: 15px; color: var(--accent); margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
         .codex-viz h2:first-child { margin-top: 0; }
@@ -530,7 +534,7 @@
         <!-- [MP-美化] 外观（主题）入口 -->
         <button id="btn-theme" class="nav-item nav-gear">◈ 外观</button>
         <!-- [MP-美化] 版本号 -->
-        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.3.0</div>
+        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.3.1</div>
     </nav>
 
     <!-- [MP-美化] 外观（主题）弹窗 -->
@@ -566,7 +570,7 @@
                 <span class="dh-caret">▽</span><span class="dh-label">抽屉 · 档案 / 总结 / 可视化</span>
             </button>
             <div class="drawer-panel">
-                <div class="drawer-ro" id="drawer-ro">只读：这是历史存档对话（不是酒馆里正在打开的那个）。要新建总结、更新档案或开注入，请先在酒馆里打开它。</div>
+                <div class="drawer-ro" id="drawer-ro">历史存档对话（不是酒馆里正在打开的那个）。档案和总结可以照常查阅、编辑、保存。只有 AI 生成、替换隐藏、注入这几样需要在酒馆里打开它才能用。</div>
                 <div class="drawer-tabs">
                     <button class="dtab active" data-dtab="codex">档案</button>
                     <button class="dtab" data-dtab="sum">总结</button>
@@ -1479,10 +1483,11 @@
 
         // [MP] 入库一条总结，返回 {id, volume}；applied 标记是否已执行替换
         async function saveSummaryRow(text, rs, re, applied) {
-            const existing = await summariesForChat(currentChatKey);
+            const key = selectedChatKey || currentChatKey;   // [MP] 存档对话也能手动入库
+            const existing = await summariesForChat(key);
             const volume = (existing.reduce((mx, r) => Math.max(mx, r.volume || 0), 0)) + 1;
             const id = await idbReq(tx('summaries', 'readwrite').add({
-                chatKey: currentChatKey,
+                chatKey: key,
                 volume, rangeStart: rs, rangeEnd: re,
                 summaryText: text, applied: !!applied,
                 createdAt: new Date().toISOString(),
@@ -1496,7 +1501,7 @@
             if (saveBusy) return;
             saveBusy = true;
             try {
-                if (!currentChatKey) { toast('未定位聊天'); return; }
+                if (!selectedChatKey) { toast('未选择对话'); return; }
                 const text = document.getElementById('sum-result').value.trim();
                 if (!text) { toast('总结为空'); return; }
                 const rs = parseInt(document.getElementById('sum-start').value, 10);
@@ -1512,6 +1517,12 @@
                 await renderSummaryHistory();
             } finally { saveBusy = false; }
         };
+
+        // [MP] 手动在总结框里打字（含存档对话离线补总结）也能开保存入库按钮
+        document.getElementById('sum-result').addEventListener('input', () => {
+            const has = document.getElementById('sum-result').value.trim().length > 0;
+            if (has) document.getElementById('btn-save-summary').disabled = false;
+        });
 
         // [MP] 保存并执行替换隐藏：入库→发桥改真实存档→回执后标记 applied 并刷新
         let applyPending = null; // {id, volume, rs, re}
@@ -1783,10 +1794,11 @@
 
         // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版
         async function saveCodexDoc(docText, keepPrev) {
-            if (!currentChatKey) throw new Error('未定位聊天');
-            const old = await loadCodexRecord(currentChatKey);
+            const key = selectedChatKey || currentChatKey;   // [MP] 存档对话也能编辑保存
+            if (!key) throw new Error('未选择对话');
+            const old = await loadCodexRecord(key);
             const rec = {
-                chatKey: currentChatKey,
+                chatKey: key,
                 docText: String(docText != null ? docText : ''),
                 updatedAt: new Date().toISOString(),
                 prevDocText: keepPrev ? ((old && old.docText) || '') : ((old && old.prevDocText) || ''),
@@ -1841,28 +1853,29 @@
         document.getElementById('btn-codex-save').onclick = async () => {
             if (codexSaveBusy) return; codexSaveBusy = true;
             try {
-                if (!selectedIsLive()) { toast('历史存档对话只读，请在酒馆里打开它再编辑档案'); return; }
+                if (!selectedChatKey) { toast('未选择对话'); return; }
                 await saveCodexDoc(document.getElementById('codex-text').value, true);
-                toast('档案已保存');
+                toast(selectedIsLive() ? '档案已保存' : '档案已保存（存档对话，酒馆打开时会用到这份）');
                 await renderCodex();
-                if (injEnabled) await refreshInjection();
+                if (injEnabled && selectedIsLive()) await refreshInjection();
             } catch (e) { toast('保存失败: ' + (e && e.message || e)); dlog('存档案失败: ' + (e && e.message || e), true); }
             finally { codexSaveBusy = false; }
         };
 
         // 还原上一版（与当前互换，可来回切）
         document.getElementById('btn-codex-revert').onclick = async () => {
-            if (!selectedIsLive()) { toast('历史存档对话只读'); return; }
-            const rec = await loadCodexRecord(currentChatKey);
+            const key = selectedChatKey || currentChatKey;
+            if (!key) { toast('未选择对话'); return; }
+            const rec = await loadCodexRecord(key);
             if (!rec || !rec.prevDocText) { toast('没有可还原的上一版'); return; }
             const restored = {
-                chatKey: currentChatKey, docText: rec.prevDocText,
+                chatKey: key, docText: rec.prevDocText,
                 updatedAt: new Date().toISOString(), prevDocText: rec.docText,
             };
             await idbReq(tx('codex', 'readwrite').put(restored));
             toast('已还原到上一版');
             await renderCodex();
-            if (injEnabled) await refreshInjection();
+            if (injEnabled && selectedIsLive()) await refreshInjection();
         };
 
         // AI更新档案：两阶段，跟总结同一条路（桥取原文→前台直发副API），长请求不被手机冻
@@ -2209,10 +2222,12 @@
         function setDrawerReadonly(ro) {
             const d = document.getElementById('drawer');
             if (d) d.classList.toggle('readonly', !!ro);
-            const always = ['codex-start', 'codex-end', 'btn-codex-gen', 'codex-text', 'btn-codex-save',
-                'inj-enabled', 'inj-pos', 'inj-depth', 'sum-start', 'sum-end', 'btn-gen', 'sum-result'];
-            always.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
-            if (ro) ['btn-codex-revert', 'btn-save-summary', 'btn-apply'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
+            // [MP] 只有这几样真的要在线桥：AI生成要问桥要原文，注入/替换隐藏要改酒馆真实存档
+            const liveOnly = ['btn-codex-gen', 'btn-gen', 'inj-enabled', 'inj-pos', 'inj-depth'];
+            liveOnly.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
+            // 替换隐藏改酒馆存档：存档态强制关；在线态交回它自己的启用逻辑
+            if (ro) { const a = document.getElementById('btn-apply'); if (a) a.disabled = true; }
+            // 档案/总结的编辑、保存、还原上一版：纯本地库，任何对话都放开（编辑保存后酒馆打开时自然接得上）
         }
 
         // [MP] 历史存档对话的正文（只读，取自蜜脾正文库；实时楼层要在酒馆打开它才看得到）
@@ -2328,7 +2343,7 @@
         document.getElementById('nav-settings').onclick = () => { showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; closeSidebar(); };
         document.getElementById('settings-back').onclick = () => { showScreen('workspace'); document.getElementById('view-title').textContent = titleForSelected(); };
         // [MP] 抽屉拉开/收起
-        document.getElementById('drawer-handle').onclick = () => document.getElementById('drawer').classList.toggle('collapsed');
+        document.getElementById('drawer-handle').onclick = () => { syncHeaderHeight(); document.getElementById('drawer').classList.toggle('collapsed'); };
         // [MP] 抽屉内页签：档案 / 总结 / 可视化
         document.querySelectorAll('.dtab').forEach(b => b.onclick = () => {
             const t = b.dataset.dtab;
@@ -2517,8 +2532,16 @@
         }
 
         // [MP] ============ 启动 ============
+        // [MP] 量顶栏实际高度写进 --hdr-h，抽屉把手吸顶时正好贴在顶栏下沿（手机上顶栏换行也不会遮住把手）
+        function syncHeaderHeight() {
+            const h = document.querySelector('header');
+            if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px');
+        }
+        window.addEventListener('resize', syncHeaderHeight);
+
         (async function init() {
             dlog('vault启动，marked=' + (!!window.marked));
+            syncHeaderHeight();
             try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
             try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
