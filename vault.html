@@ -8,6 +8,8 @@
     <title>蜜脾 Mellarium</title>
     <!-- [MP] marked 本地单文件，不走CDN；缺失时回退纯文本渲染 -->
     <script src="lib/marked.min.js" defer></script>
+    <!-- [MP] toolcool 取色器：本地单文件，内联拉出式取色（仿酒馆主题色） -->
+    <script src="lib/toolcool-color-picker.js" defer></script>
     <style>
         /* [MP-美化] 主题基座：蜜金暖调暗色（默认）。切主题只覆盖 body[data-theme=xxx] 里的色板变量 */
         :root {
@@ -72,7 +74,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .title { font-weight: 700; color: var(--accent); letter-spacing: .02em; }
@@ -84,7 +86,8 @@
             padding: 3px 8px;
             background: var(--panel2);
             border-radius: 4px;
-            max-width: 42vw;
+            flex: 1 1 0;
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -185,7 +188,7 @@
         .api-status.err { background: #3a1e1e; color: #ff8a8a; border-color: #7a2f2f; }
 
         .panel input[type="text"], .panel input[type="password"], .panel input[type="number"], .panel textarea,
-        .drawer-panel input[type="text"], .drawer-panel input[type="password"], .drawer-panel input[type="number"], .drawer-panel textarea {
+        .mp-fold-body input[type="text"], .mp-fold-body input[type="password"], .mp-fold-body input[type="number"], .mp-fold-body textarea {
             background: var(--panel2);
             border: 1px solid var(--line);
             color: var(--ink);
@@ -196,7 +199,7 @@
             font: inherit;
         }
 
-        .panel textarea, .drawer-panel textarea { resize: vertical; }
+        .panel textarea, .mp-fold-body textarea { resize: vertical; }
         .summary-work textarea { margin: 8px 0; }
         /* [MP-美化] 输入聚焦蜜金描边 */
         input:focus, textarea:focus, select:focus {
@@ -398,6 +401,10 @@
         .nav-cap { font-size: 12px; color: var(--muted); padding: 2px 12px; }
         .nav-spring { flex: 1; }
         .nav-gear { color: var(--muted); }
+        /* [MP] 底栏：工具左下角、版本号淡字右下角 */
+        .nav-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 12px; }
+        .nav-foot .nav-item { width: auto; flex: 0 0 auto; }
+        .nav-ver { font-size: 11px; color: var(--muted); opacity: .55; white-space: nowrap; }
         .nav-item.sub { padding-left: 24px; font-size: 14px; color: var(--muted); }
         .nav-item.sub.active { color: var(--accent); border-left-color: var(--accent); }
         .tools-group { display: none; }
@@ -411,28 +418,24 @@
         .theme-dialog-head { display: flex; align-items: center; margin-bottom: 14px; }
         .theme-dialog-head .t { font-weight: 700; color: var(--accent); font-size: 16px; flex: 1; }
         .theme-close { background: transparent; border: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 8px; cursor: pointer; }
-        .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .theme-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; cursor: pointer; background: var(--panel2); transition: border-color .15s; text-align: left; width: 100%; }
-        @media (hover: hover) { .theme-card:hover { border-color: var(--accent); } }
-        .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .2); }
-        .theme-card .tc-name { font-weight: 600; margin-bottom: 9px; display: flex; align-items: center; gap: 6px; color: var(--ink); }
-        .theme-card .tc-name .chk { color: var(--accent); margin-left: auto; }
-        .theme-swatch { display: flex; gap: 5px; }
-        .theme-swatch i { width: 24px; height: 24px; border-radius: 5px; display: block; border: 1px solid rgba(255,255,255,.1); }
-        /* [MP-美化] 自助配色面板 */
-        .theme-custom { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
-        .theme-custom.active { }
         .tc-title { font-weight: 600; color: var(--ink); font-size: 13px; margin-bottom: 10px; }
-        .cf-preview { display: flex; gap: 6px; margin-bottom: 12px; }
-        .cf-preview i { flex: 1; height: 30px; border-radius: 6px; display: block; border: 1px solid rgba(128,128,128,.25); transition: background .1s; }
-        .cf-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
-        .cf-row input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
-        .cf-val { width: 30px; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
-        .cf-mode { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
-        .cf-mode-btn { flex: 1; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); transition: border-color .15s, color .15s; }
-        .cf-mode-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-        .cf-reset { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: transparent; color: var(--muted); }
-        @media (hover: hover) { .cf-mode-btn:hover, .cf-reset:hover { border-color: var(--accent); } }
+        /* [MP-美化] UI 主题：下拉 + 操作按钮 */
+        .theme-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
+        .theme-sel { flex: 1 1 130px; min-width: 0; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--ink); font-size: 13px; }
+        .theme-iconbtn { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 13px; cursor: pointer; transition: border-color .15s, color .15s; }
+        @media (hover: hover) { .theme-iconbtn:hover { border-color: var(--accent); color: var(--accent); } }
+        .theme-iconbtn.danger { color: var(--warn); }
+        @media (hover: hover) { .theme-iconbtn.danger:hover { border-color: var(--warn); color: var(--warn); } }
+        /* [MP-美化] 分块 */
+        .theme-block { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+        /* [MP-美化] 主题颜色：一行一项，色块点开内联取色器（toolcool） */
+        .cc-list { display: flex; flex-direction: column; gap: 4px; }
+        .cc-item { display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: var(--ink); padding: 3px 0; }
+        .cc-item span { flex: 1; }
+        .cc-item toolcool-color-picker { flex: 0 0 auto; --tool-cp-width: 30px; --tool-cp-height: 24px; --tool-cp-border-radius: 5px; --tool-cp-border: 1px solid var(--line); }
+        /* [MP-美化] 自定义CSS框 */
+        #custom-css { width: 100%; box-sizing: border-box; min-height: 120px; resize: vertical; background: var(--panel2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 10px 12px; font: 12.5px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+        #custom-css:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .15); }
 
         /* [MP-美化] 细滚动条 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -469,20 +472,16 @@
         /* [MP] ========== 抽屉 ========== */
         #workspace { padding: 0; }
         .drawer { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
-        .drawer-handle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--accent); padding: 9px; margin-top: 12px; font-weight: 600; cursor: pointer; position: sticky; top: var(--hdr-h, 48px); z-index: 6; }
-        .drawer:not(.collapsed) .drawer-handle { border-radius: var(--radius-sm) var(--radius-sm) 0 0; border-bottom: none; }
-        @media (hover: hover) { .drawer-handle:hover { border-color: var(--accent); } }
-        .drawer .dh-caret { transition: transform .15s; }
-        .drawer:not(.collapsed) .dh-caret { transform: rotate(180deg); }
-        .drawer-panel { border: 1px solid var(--line); border-top: none; border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 12px 14px; background: var(--panel); }
-        .drawer.collapsed .drawer-panel { display: none; }
-        .drawer-ro { display: none; background: rgba(var(--accent-rgb), .1); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 10px; line-height: 1.5; }
+        .drawer-ro { display: none; background: rgba(var(--accent-rgb), .1); border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; margin: 12px 0 0; line-height: 1.5; }
         .drawer.readonly .drawer-ro { display: block; }
-        .drawer-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-        .dtab { flex: 1; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 14px; cursor: pointer; }
-        .dtab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-        .dpane { display: none; }
-        .dpane.active { display: block; }
+        /* [MP] 横排标签：档案/总结 + 各表并列，一行摆不下就换行；各自点开收起，可同时开多个 */
+        .fold-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .fold-tab { flex: 1 1 auto; min-width: 68px; padding: 9px 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; }
+        .fold-tab.active { border-color: var(--accent); color: var(--accent); background: var(--panel); }
+        @media (hover: hover) { .fold-tab:hover { border-color: var(--accent); } }
+        .fold-pane { display: none; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); margin-top: 8px; }
+        .fold-pane.open { display: block; }
+        .mp-fold-body { padding: 12px 14px; }
         .pane-meta { margin: 0 0 6px; font-size: 12px; line-height: 1.4; }
         .pane-meta:empty { display: none; }
         .codex-viz .empty { padding: 12px; font-size: 13px; }
@@ -501,25 +500,21 @@
         }
     </style>
     <!-- [MP-美化] 提前套用已存主题，避免刷新闪回默认色 -->
-    <script>try { var _t = localStorage.getItem('mp_theme'); if (_t && _t !== 'honey') document.documentElement.setAttribute('data-theme', _t); } catch (e) {}</script>
+    <script>try { var _n = localStorage.getItem('mp_theme'); var _a = JSON.parse(localStorage.getItem('mp_themes') || '[]'); var _t = _a.filter(function (x) { return x && x.name === _n; })[0]; if (_t && _t.colors) { var _s = document.documentElement.style; for (var _k in _t.colors) _s.setProperty(_k, _t.colors[_k]); } } catch (e) {}</script>
 </head>
 
 <body>
     <header>
         <button id="btn-menu" class="menu-btn" title="菜单">☰</button>
-        <span class="title">蜜脾</span>
+        <button id="btn-refresh" class="icon-btn" title="刷新快照：重新从酒馆抓取当前聊天">⟳</button>
         <span class="chatkey" id="chatkey">未定位</span>
         <span><span class="dot off" id="bridgedot"></span> <span id="bridgetext" class="floor-meta">桥离线</span></span>
-        <div class="spacer"></div>
-        <button id="btn-refresh" class="icon-btn" title="刷新快照：重新从酒馆抓取当前聊天">⟳</button>
-        <span class="floor-meta" id="view-title">正文</span>
         <input type="file" id="file-import" accept="application/json" style="display:none" />
     </header>
 
     <!-- [MP] 侧边栏导航 -->
     <div id="overlay"></div>
     <nav id="sidebar">
-        <div class="nav-title">蜜脾</div>
         <!-- [MP] 角色树：一排角色卡→点开展开该角色名下有蜜脾记录的对话 -->
         <div id="char-tree" class="char-tree"><div class="empty">等待桥定位…</div></div>
         <div class="nav-spring"></div>
@@ -528,13 +523,15 @@
             <button id="btn-export" class="nav-item sub" title="三表全量导出为JSON">导出全部</button>
             <button id="btn-import" class="nav-item sub">导入</button>
             <button id="btn-debug" class="nav-item sub" title="手机无控制台时看这里">调试日志</button>
+            <!-- [MP-美化] 外观（主题）并入工具 -->
+            <button id="btn-theme" class="nav-item sub">◈ 外观</button>
         </div>
         <div class="nav-sep"></div>
-        <button id="btn-tools" class="nav-item nav-gear">⚙ 工具</button>
-        <!-- [MP-美化] 外观（主题）入口 -->
-        <button id="btn-theme" class="nav-item nav-gear">◈ 外观</button>
-        <!-- [MP-美化] 版本号 -->
-        <div class="nav-cap" style="padding-top:8px">蜜脾 v0.3.1</div>
+        <!-- [MP] 底栏：工具在左下角，版本号淡字在右下角 -->
+        <div class="nav-foot">
+            <button id="btn-tools" class="nav-item nav-gear">⚙ 工具</button>
+            <span class="nav-ver">Mellarium · v0.3.2</span>
+        </div>
     </nav>
 
     <!-- [MP-美化] 外观（主题）弹窗 -->
@@ -544,19 +541,26 @@
                 <span class="t">外观</span>
                 <button class="theme-close" id="theme-close" title="关闭">✕</button>
             </div>
-            <div class="theme-grid" id="theme-grid"></div>
-            <!-- [MP-美化] 自助配色：拖滑杆实时生成整套色板，不会写CSS也能调 -->
-            <div class="theme-custom" id="theme-custom">
-                <div class="tc-title">自助配色 · 拖动即生效</div>
-                <div class="cf-preview"><i id="cf-p-bg"></i><i id="cf-p-accent"></i><i id="cf-p-accent2"></i><i id="cf-p-ai"></i></div>
-                <label class="cf-row">色相 <input type="range" id="cf-hue" min="0" max="360" value="42" /><span class="cf-val" id="cf-hue-v">42</span></label>
-                <label class="cf-row">浓度 <input type="range" id="cf-sat" min="0" max="100" value="55" /><span class="cf-val" id="cf-sat-v">55</span></label>
-                <div class="cf-mode">
-                    <button class="cf-mode-btn active" id="cf-dark">暗色底</button>
-                    <button class="cf-mode-btn" id="cf-light">亮色底</button>
-                    <button class="cf-reset" id="cf-reset" title="回到预设主题">重置</button>
-                </div>
+            <!-- [MP-美化] UI 主题：下拉选择 + 存为/导入/导出/删除 -->
+            <div class="tc-title">UI 主题</div>
+            <div class="theme-row">
+                <select id="theme-select" class="theme-sel"></select>
+                <button class="theme-iconbtn" id="theme-saveas" title="存为新主题">＋ 新建</button>
+                <button class="theme-iconbtn" id="theme-import" title="从文件导入主题">导入</button>
+                <button class="theme-iconbtn" id="theme-export" title="导出当前主题">导出</button>
+                <button class="theme-iconbtn danger" id="theme-delete" title="删除当前主题">删除</button>
             </div>
+            <!-- [MP-美化] 主题颜色：点色块内联拉出取色器 -->
+            <div class="theme-block" id="theme-colors">
+                <div class="tc-title">主题颜色</div>
+                <div class="cc-list" id="cc-list"></div>
+            </div>
+            <!-- [MP-美化] 自定义 CSS：直接写样式，实时注入 -->
+            <div class="theme-block" id="theme-css">
+                <div class="tc-title">自定义 CSS</div>
+                <textarea id="custom-css" rows="6" placeholder=":root{ --accent:#e0b050; }&#10;.msg{ letter-spacing:.2px; }"></textarea>
+            </div>
+            <input type="file" id="theme-file" accept="application/json,.json" style="display:none">
         </div>
     </div>
 
@@ -564,78 +568,74 @@
 
     <!-- [MP] 工作区：抽屉(档案/总结/可视化) 悬在正文之上 -->
     <div id="workspace" class="screen active">
-        <!-- 抽屉 -->
-        <div id="drawer" class="drawer collapsed">
-            <button id="drawer-handle" class="drawer-handle">
-                <span class="dh-caret">▽</span><span class="dh-label">抽屉 · 档案 / 总结 / 可视化</span>
-            </button>
-            <div class="drawer-panel">
-                <div class="drawer-ro" id="drawer-ro">历史存档对话（不是酒馆里正在打开的那个）。档案和总结可以照常查阅、编辑、保存。只有 AI 生成、替换隐藏、注入这几样需要在酒馆里打开它才能用。</div>
-                <div class="drawer-tabs">
-                    <button class="dtab active" data-dtab="codex">档案</button>
-                    <button class="dtab" data-dtab="sum">总结</button>
-                    <button class="dtab" data-dtab="viz">可视化</button>
-                </div>
-                <div class="drawer-body">
-                    <!-- 档案 -->
-                    <div class="dpane active" id="dpane-codex">
-                        <div class="pane-meta"><span class="floor-meta" id="codex-meta"></span></div>
-                        <details class="prompt-fold top">
-                            <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
-                            <textarea id="s-codex-prompt" rows="6"></textarea>
-                        </details>
-                        <div class="srow inline">
-                            <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
-                            <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
-                            <button class="primary" id="btn-codex-gen">AI更新档案</button>
-                            <span class="floor-meta" id="codex-stat"></span>
-                        </div>
-                        <textarea id="codex-text" rows="12"
-                            placeholder="设定档案·固定四表（角色档案 / 世界设定 / 地点场景 / 线索悬念），Markdown 表格。可手动编辑，或用上面的AI更新从区间原文提炼并入。"></textarea>
-                        <div class="srow inline">
-                            <button class="primary" id="btn-codex-save">保存档案</button>
-                            <button id="btn-codex-revert" disabled title="还原到上一次AI更新/保存前的版本">还原上一版</button>
-                        </div>
-                        <div class="srow inline inject-row">
-                            <label><input type="checkbox" id="inj-enabled" /> 开启注入（档案 + 最新一卷总结）</label>
-                            <label>位置
-                                <select id="inj-pos">
-                                    <option value="1">聊天内深度</option>
-                                    <option value="0">最前（故事后·聊天前）</option>
-                                </select>
-                            </label>
-                            <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
-                            <span class="floor-meta" id="inj-stat"></span>
-                        </div>
+        <!-- 三个常驻折叠块：档案 / 总结 / 可视化 -->
+        <div id="drawer" class="drawer">
+            <div class="drawer-ro" id="drawer-ro">历史存档对话（不是酒馆里正在打开的那个）。档案和总结可以照常查阅、编辑、保存。只有 AI 生成、替换隐藏、注入这几样需要在酒馆里打开它才能用。</div>
+            <!-- 横排标签：档案 / 总结 + 档案里每张表各一个标签，各自点开收起 -->
+            <div class="fold-bar" id="fold-bar">
+                <button class="fold-tab" data-pane="codex">档案</button>
+                <button class="fold-tab" data-pane="sum">总结</button>
+                <!-- 可视化各表标签由 renderViz 动态插在这后面 -->
+            </div>
+            <!-- 档案 -->
+            <div class="fold-pane" id="pane-codex">
+                <div class="mp-fold-body">
+                    <div class="pane-meta"><span class="floor-meta" id="codex-meta"></span></div>
+                    <details class="prompt-fold top">
+                        <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
+                        <textarea id="s-codex-prompt" rows="6"></textarea>
+                    </details>
+                    <div class="srow inline">
+                        <label>AI更新起始楼 <input type="number" id="codex-start" min="0" style="width:80px" /></label>
+                        <label>结束楼 <input type="number" id="codex-end" min="0" style="width:80px" /></label>
+                        <button class="primary" id="btn-codex-gen">AI更新档案</button>
+                        <span class="floor-meta" id="codex-stat"></span>
                     </div>
-                    <!-- 总结 -->
-                    <div class="dpane" id="dpane-sum">
-                        <div class="pane-meta"><span class="floor-meta" id="lastvol"></span></div>
-                        <details class="prompt-fold top">
-                            <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
-                            <textarea id="s-prompt" rows="6"></textarea>
-                        </details>
-                        <div class="summary-work">
-                            <div class="srow inline">
-                                <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
-                                <label>结束楼 <input type="number" id="sum-end" min="0" style="width:80px" /></label>
-                                <button class="primary" id="btn-gen">生成总结</button>
-                                <span class="floor-meta" id="gen-stat"></span>
-                            </div>
-                            <textarea id="sum-result" rows="8" placeholder="生成的总结会出现在这里，可自行编辑后入库…"></textarea>
-                            <div class="srow inline">
-                                <button id="btn-save-summary" disabled>仅保存入库</button>
-                                <button id="btn-apply" disabled title="把区间折叠成总结，改动酒馆真实存档(可逆)">保存并执行替换隐藏</button>
-                            </div>
-                        </div>
-                        <div class="summary-history" id="sum-history"></div>
+                    <textarea id="codex-text" rows="12"
+                        placeholder="设定档案·固定四表（角色档案 / 世界设定 / 地点场景 / 线索悬念），Markdown 表格。可手动编辑，或用上面的AI更新从区间原文提炼并入。"></textarea>
+                    <div class="srow inline">
+                        <button class="primary" id="btn-codex-save">保存档案</button>
+                        <button id="btn-codex-revert" disabled title="还原到上一次AI更新/保存前的版本">还原上一版</button>
                     </div>
-                    <!-- 可视化四表 -->
-                    <div class="dpane" id="dpane-viz">
-                        <div class="codex-viz" id="codex-viz"><div class="empty">选一个对话，这里把它档案里的四张表画出来。</div></div>
+                    <div class="srow inline inject-row">
+                        <label><input type="checkbox" id="inj-enabled" /> 开启注入（档案 + 最新一卷总结）</label>
+                        <label>位置
+                            <select id="inj-pos">
+                                <option value="1">聊天内深度</option>
+                                <option value="0">最前（故事后·聊天前）</option>
+                            </select>
+                        </label>
+                        <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
+                        <span class="floor-meta" id="inj-stat"></span>
                     </div>
                 </div>
             </div>
+            <!-- 总结 -->
+            <div class="fold-pane" id="pane-sum">
+                <div class="mp-fold-body">
+                    <div class="pane-meta"><span class="floor-meta" id="lastvol"></span></div>
+                    <details class="prompt-fold top">
+                        <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
+                        <textarea id="s-prompt" rows="6"></textarea>
+                    </details>
+                    <div class="summary-work">
+                        <div class="srow inline">
+                            <label>起始楼 <input type="number" id="sum-start" min="0" style="width:80px" /></label>
+                            <label>结束楼 <input type="number" id="sum-end" min="0" style="width:80px" /></label>
+                            <button class="primary" id="btn-gen">生成总结</button>
+                            <span class="floor-meta" id="gen-stat"></span>
+                        </div>
+                        <textarea id="sum-result" rows="8" placeholder="生成的总结会出现在这里，可自行编辑后入库…"></textarea>
+                        <div class="srow inline">
+                            <button id="btn-save-summary" disabled>仅保存入库</button>
+                            <button id="btn-apply" disabled title="把区间折叠成总结，改动酒馆真实存档(可逆)">保存并执行替换隐藏</button>
+                        </div>
+                    </div>
+                    <div class="summary-history" id="sum-history"></div>
+                </div>
+            </div>
+            <!-- 可视化各表面板（每张表一个，由 renderViz 动态生成，与档案/总结并列） -->
+            <div id="viz-panes"></div>
         </div>
 
         <!-- 正文筛选（仅当前在线对话可用） -->
@@ -718,7 +718,6 @@
         window.addEventListener('unhandledrejection', e => dlog('Promise错误: ' + (e.reason && e.reason.message || e.reason), true));
         document.getElementById('btn-debug').onclick = () => {
             document.getElementById('debugwrap').classList.toggle('show');
-            closeSidebar();  // [MP] 收起抽屉，日志才不被侧边栏挡
         };
         document.getElementById('debug-close').onclick = () => document.getElementById('debugwrap').classList.remove('show');
 
@@ -1222,7 +1221,7 @@
             const re = parseInt(document.getElementById('sum-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
             const cfg = apiConfigFromUI();
-            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; return; }
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); return; }
             const reqId = ++genReqSeq;
             genReqId = reqId;                 // [MP] 记下这一发的号，只认它的回包
             genPhase = 'range';               // [MP] 第一阶段：等桥给原文
@@ -1780,16 +1779,47 @@
             await renderViz(chatKey);   // [MP] 档案变了顺手刷可视化
         }
 
-        // [MP] 可视化四表：把档案里的 markdown（## 表名 + 表格）渲染成真表
+        // [MP] 可视化：把档案 markdown 按 ## 表名 切段，每张表生成一个与「档案/总结」并列的标签+面板
         async function renderViz(chatKey) {
             chatKey = chatKey || selectedChatKey;
-            const wrap = document.getElementById('codex-viz');
-            if (!wrap) return;
+            const bar = document.getElementById('fold-bar');
+            const panes = document.getElementById('viz-panes');
+            if (!bar || !panes) return;
+            // 清掉上一次动态生成的表标签和面板，记住哪些原本是展开的，重建后尽量还原
+            const wasOpen = new Set([...panes.querySelectorAll('.fold-pane.open')].map(p => p.dataset.title));
+            bar.querySelectorAll('.fold-tab.viz-tab').forEach(el => el.remove());
+            panes.innerHTML = '';
             const rec = chatKey ? await loadCodexRecord(chatKey) : null;
             const doc = ((rec && rec.docText) || '').trim();
-            if (!doc) { wrap.innerHTML = '<div class="empty">这个对话还没有档案。到「档案」页用AI更新或手动填写后，这里会把四张表画出来。</div>'; return; }
-            const r = renderMd(doc);
-            wrap.innerHTML = r.plain ? ('<pre>' + esc(doc) + '</pre>') : r.html;
+            if (!doc) return;   // 没档案就没有表标签
+            // 按标题行切段
+            const sections = [];
+            let cur = null;
+            doc.split('\n').forEach(line => {
+                const m = /^#{1,6}\s+(.*)$/.exec(line.trim());
+                if (m) { cur = { title: m[1].trim(), body: [] }; sections.push(cur); }
+                else if (cur) { cur.body.push(line); }
+                else if (line.trim()) { cur = { title: '', body: [line] }; sections.push(cur); }
+            });
+            sections.forEach((s, i) => {
+                const title = s.title || ('表' + (i + 1));
+                const paneId = 'viz' + i;
+                const btn = document.createElement('button');
+                btn.className = 'fold-tab viz-tab';
+                btn.dataset.pane = paneId;
+                btn.textContent = title;
+                bar.appendChild(btn);
+                const raw = s.body.join('\n').trim();
+                const b = renderMd(raw);
+                const inner = raw ? (b.plain ? ('<pre>' + esc(raw) + '</pre>') : b.html) : '<div class="empty">（空）</div>';
+                const pane = document.createElement('div');
+                pane.className = 'fold-pane';
+                pane.id = 'pane-' + paneId;
+                pane.dataset.title = title;
+                pane.innerHTML = '<div class="mp-fold-body codex-viz">' + inner + '</div>';
+                panes.appendChild(pane);
+                if (wasOpen.has(title)) { pane.classList.add('open'); btn.classList.add('active'); }
+            });
         }
 
         // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版
@@ -1887,7 +1917,7 @@
             const re = parseInt(document.getElementById('codex-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
             const cfg = apiConfigFromUI();
-            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; return; }
+            if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); return; }
             const reqId = ++genReqSeq;
             codexReqId = reqId; codexCfg = cfg;
             codexExistingDoc = document.getElementById('codex-text').value || '';
@@ -2212,12 +2242,6 @@
         function showScreen(name) {
             document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === name));
         }
-        function titleForSelected() {
-            if (!selectedChatKey) return '蜜脾';
-            const { char, chat } = splitChatKey(selectedChatKey);
-            return (chat || char || '') + (selectedIsLive() ? '' : ' · 存档');
-        }
-
         // [MP] 抽屉只读态：非在线对话时禁掉一切生成/编辑控件，只能看
         function setDrawerReadonly(ro) {
             const d = document.getElementById('drawer');
@@ -2276,7 +2300,6 @@
             if (!chatKey) return;
             selectedChatKey = chatKey;
             const live = selectedIsLive();
-            document.getElementById('view-title').textContent = titleForSelected();
             document.querySelectorAll('.ct-chat').forEach(b => b.classList.toggle('sel', b.dataset.key === chatKey));
             const tb = document.getElementById('prose-toolbar'); if (tb) tb.style.display = live ? '' : 'none';
             if (live) await render(); else await renderArchivedProse(chatKey);
@@ -2340,143 +2363,211 @@
         };
         document.getElementById('overlay').onclick = closeSidebar;
         // [MP] 副API设置：进设置屏 / 返回工作区
-        document.getElementById('nav-settings').onclick = () => { showScreen('v-settings'); document.getElementById('view-title').textContent = '副API设置'; closeSidebar(); };
-        document.getElementById('settings-back').onclick = () => { showScreen('workspace'); document.getElementById('view-title').textContent = titleForSelected(); };
-        // [MP] 抽屉拉开/收起
-        document.getElementById('drawer-handle').onclick = () => { syncHeaderHeight(); document.getElementById('drawer').classList.toggle('collapsed'); };
-        // [MP] 抽屉内页签：档案 / 总结 / 可视化
-        document.querySelectorAll('.dtab').forEach(b => b.onclick = () => {
-            const t = b.dataset.dtab;
-            document.querySelectorAll('.dtab').forEach(x => x.classList.toggle('active', x === b));
-            document.querySelectorAll('.dpane').forEach(p => p.classList.toggle('active', p.id === 'dpane-' + t));
-            if (t === 'viz') renderViz(selectedChatKey);
+        document.getElementById('nav-settings').onclick = () => { showScreen('v-settings'); closeSidebar(); };
+        document.getElementById('settings-back').onclick = () => { showScreen('workspace'); };
+        // [MP] 横排标签用事件委托：点一下开合对应面板，可同时开多个（动态生成的表标签也吃这条）
+        document.getElementById('fold-bar').addEventListener('click', (e) => {
+            const b = e.target.closest('.fold-tab');
+            if (!b) return;
+            const pane = document.getElementById('pane-' + b.dataset.pane);
+            if (!pane) return;
+            const open = pane.classList.toggle('open');
+            b.classList.toggle('active', open);
         });
         // [MP] 齿轮展开/收起工具组
         document.getElementById('btn-tools').onclick = () => document.getElementById('tools-group').classList.toggle('show');
 
-        // [MP-美化] ============ 外观（主题） ============
-        // 新增主题：往 MP_THEMES 加一行 + 在 <style> 里补一段 :root[data-theme="key"]{...} 色板即可
-        const MP_THEMES = [
-            { key: 'honey',    name: '蜜金', swatch: ['#151518', '#d4a03a', '#e8c06a', '#8a6cd0'] },
-            { key: 'platinum', name: '白金', swatch: ['#f2ede2', '#c19a3e', '#a67c1f', '#8f6ac4'] },
+        // [MP-美化] ============ 外观（主题）：命名主题 + 内联取色器（toolcool） ============
+        // 人话命名的可调色项 → 实际 CSS 变量
+        const MP_COLOR_FIELDS = [
+            { v: '--accent', n: '强调色' },
+            { v: '--bg',     n: '页面背景' },
+            { v: '--panel',  n: '面板背景' },
+            { v: '--ink',    n: '主要文本' },
+            { v: '--muted',  n: '次要文本' },
+            { v: '--line',   n: '边框' },
+            { v: '--user',   n: '我方消息' },
+            { v: '--ai',     n: 'AI 消息' },
         ];
-        function currentTheme() { try { return localStorage.getItem('mp_theme') || 'honey'; } catch (e) { return 'honey'; } }
-        function applyTheme(key) {
-            clearCustomVars();   // [MP-美化] 切到预设主题前，先抹掉自助配色留下的内联色变量
-            if (!key || key === 'honey') document.documentElement.removeAttribute('data-theme');
-            else document.documentElement.setAttribute('data-theme', key);
-            try { localStorage.setItem('mp_theme', key || 'honey'); } catch (e) {}
+        function hexToRgb(h) {
+            h = String(h || '').trim(); if (h[0] === '#') h = h.slice(1);
+            if (h.length === 3) h = h.split('').map(c => c + c).join('');
+            const n = parseInt(h, 16); if (isNaN(n) || h.length !== 6) return null;
+            return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
         }
-        function renderThemeGrid() {
-            const cur = currentTheme();
-            const grid = document.getElementById('theme-grid');
-            grid.innerHTML = MP_THEMES.map(t =>
-                `<button class="theme-card${t.key === cur ? ' active' : ''}" data-theme-key="${t.key}">` +
-                `<div class="tc-name">${esc(t.name)}${t.key === cur ? '<span class="chk">✓</span>' : ''}</div>` +
-                `<div class="theme-swatch">${t.swatch.map(c => `<i style="background:${c}"></i>`).join('')}</div>` +
-                `</button>`
+        // 任意 CSS 颜色（rgb()/rgba()/命名色/#abc）→ #rrggbb
+        function cssColorToHex(str) {
+            str = String(str || '').trim(); if (!str) return '#000000';
+            if (/^#[0-9a-f]{6}$/i.test(str)) return str.toLowerCase();
+            if (/^#[0-9a-f]{3}$/i.test(str)) return ('#' + str.slice(1).split('').map(c => c + c).join('')).toLowerCase();
+            const m = str.match(/rgba?\(([^)]+)\)/i);
+            let r, g, b;
+            if (m) { const p = m[1].split(',').map(s => parseFloat(s)); r = p[0]; g = p[1]; b = p[2]; }
+            else { const el = document.createElement('span'); el.style.color = str; document.body.appendChild(el); const c = getComputedStyle(el).color; el.remove(); const mm = c.match(/rgba?\(([^)]+)\)/i); if (!mm) return '#000000'; const p = mm[1].split(',').map(s => parseFloat(s)); r = p[0]; g = p[1]; b = p[2]; }
+            return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+        }
+        // 相对亮度（判黑白字）
+        function relLuma(hx) { const c = hexToRgb(hx); if (!c) return 1; const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); }
+        // 提亮（往白里混）/ 压暗（往黑里压）
+        function lighten(hx, amt) { const c = hexToRgb(hx); if (!c) return hx; const m = v => Math.round(v + (255 - v) * amt); return '#' + [m(c.r), m(c.g), m(c.b)].map(v => v.toString(16).padStart(2, '0')).join(''); }
+        function darken(hx, amt) { const c = hexToRgb(hx); if (!c) return hx; const m = v => Math.max(0, Math.round(v * (1 - amt))); return '#' + [m(c.r), m(c.g), m(c.b)].map(v => v.toString(16).padStart(2, '0')).join(''); }
+        // 面板背景 → 带出普通按钮/悬停两级面板色（暗底提亮，亮底压暗）
+        function applyPanelDerived(val) {
+            const s = document.documentElement.style; const hx = cssColorToHex(val); const dark = relLuma(hx) < 0.5;
+            s.setProperty('--panel2', dark ? lighten(hx, 0.05) : darken(hx, 0.045));
+            s.setProperty('--panel3', dark ? lighten(hx, 0.11) : darken(hx, 0.09));
+        }
+
+        // ---- 主题存储：每个主题 = { name, colors:{var:值}, css } ----
+        function readThemes() { try { const a = JSON.parse(localStorage.getItem('mp_themes') || '[]'); if (Array.isArray(a) && a.length) return a; } catch (e) {} return [{ name: '默认', colors: {}, css: '' }]; }
+        function writeThemes(a) { try { localStorage.setItem('mp_themes', JSON.stringify(a)); } catch (e) {} }
+        function currentThemeName() { try { return localStorage.getItem('mp_theme') || '默认'; } catch (e) { return '默认'; } }
+        function setCurrentThemeName(n) { try { localStorage.setItem('mp_theme', n); } catch (e) {} }
+        function getTheme(name) { const a = readThemes(); return a.find(t => t.name === name) || a[0]; }
+        function saveTheme(theme) { const a = readThemes(); const i = a.findIndex(t => t.name === theme.name); if (i >= 0) a[i] = theme; else a.push(theme); writeThemes(a); }
+
+        // ---- 应用 ----
+        function applyThemeVars(colors) {
+            const s = document.documentElement.style;
+            MP_COLOR_FIELDS.forEach(f => s.removeProperty(f.v));
+            s.removeProperty('--accent-rgb'); s.removeProperty('--accent2'); s.removeProperty('--on-accent');
+            s.removeProperty('--panel2'); s.removeProperty('--panel3');
+            document.documentElement.removeAttribute('data-theme');
+            for (const k in colors) {
+                s.setProperty(k, colors[k]);
+                if (k === '--accent') applyAccentDerived(colors[k]);
+                else if (k === '--panel') applyPanelDerived(colors[k]);
+            }
+        }
+        function applyAccentDerived(val) {
+            const s = document.documentElement.style; const hx = cssColorToHex(val); const rgb = hexToRgb(hx);
+            if (rgb) s.setProperty('--accent-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+            s.setProperty('--accent2', lighten(hx, 0.22));
+            s.setProperty('--on-accent', relLuma(hx) > 0.5 ? '#151518' : '#ffffff');
+        }
+        function injectThemeCss(css) {
+            let el = document.getElementById('mp-custom-css');
+            if (!el) { el = document.createElement('style'); el.id = 'mp-custom-css'; document.head.appendChild(el); }
+            el.textContent = css || '';
+        }
+        function applyThemeByName(name) {
+            const t = getTheme(name); setCurrentThemeName(t.name);
+            applyThemeVars(t.colors || {}); injectThemeCss(t.css || '');
+        }
+
+        // ---- 弹窗渲染 ----
+        function renderThemeSelect() {
+            const sel = document.getElementById('theme-select'); if (!sel) return;
+            const a = readThemes(); const cur = currentThemeName();
+            sel.innerHTML = a.map(t => `<option value="${esc(t.name)}"${t.name === cur ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+        }
+        let _ccSuppress = false;
+        function renderColorPickers() {
+            const list = document.getElementById('cc-list'); if (!list) return;
+            const t = getTheme(currentThemeName());
+            const cs = getComputedStyle(document.documentElement);
+            list.innerHTML = MP_COLOR_FIELDS.map(f =>
+                `<div class="cc-item"><toolcool-color-picker class="cc-pick" data-var="${f.v}"></toolcool-color-picker><span>${esc(f.n)}</span></div>`
             ).join('');
-            grid.querySelectorAll('.theme-card').forEach(b => b.onclick = () => {
-                applyTheme(b.dataset.themeKey);
-                renderThemeGrid();
-                const t = MP_THEMES.find(x => x.key === b.dataset.themeKey);
-                toast('外观已切换：' + (t ? t.name : ''));
+            _ccSuppress = true;
+            list.querySelectorAll('.cc-pick').forEach(pk => {
+                const v = pk.dataset.var;
+                const cur = (t.colors && t.colors[v]) ? cssColorToHex(t.colors[v]) : cssColorToHex(cs.getPropertyValue(v));
+                pk.setAttribute('color', cur);
+                pk.addEventListener('change', (e) => {
+                    if (_ccSuppress) return;
+                    const val = (e.detail && (e.detail.rgba || e.detail.hex)) || cur;
+                    setThemeColor(v, val);
+                });
             });
+            setTimeout(() => { _ccSuppress = false; }, 40);
         }
+        function setThemeColor(v, val) {
+            const t = getTheme(currentThemeName());
+            t.colors = t.colors || {}; t.colors[v] = val; saveTheme(t);
+            document.documentElement.style.setProperty(v, val);
+            if (v === '--accent') applyAccentDerived(val);
+            else if (v === '--panel') applyPanelDerived(val);
+        }
+
         function closeThemeModal() { document.getElementById('theme-modal').classList.remove('show'); }
-        document.getElementById('btn-theme').onclick = () => { renderThemeGrid(); syncCustomUI(); document.getElementById('theme-modal').classList.add('show'); closeSidebar(); };
+        function openThemeModal() {
+            renderThemeSelect(); renderColorPickers();
+            const ta = document.getElementById('custom-css'); if (ta) ta.value = getTheme(currentThemeName()).css || '';
+            document.getElementById('theme-modal').classList.add('show');
+        }
+        document.getElementById('btn-theme').onclick = openThemeModal;
         document.getElementById('theme-close').onclick = closeThemeModal;
         document.getElementById('theme-modal').onclick = (e) => { if (e.target.id === 'theme-modal') closeThemeModal(); };
 
-        // [MP-美化] ============ 自助配色（滑杆生成整套色板，写进 :root 内联样式） ============
-        const MP_VARS = ['--bg', '--panel', '--panel2', '--panel3', '--ink', '--muted', '--line', '--user', '--ai', '--accent', '--accent2', '--accent-rgb', '--on-accent', '--ok', '--warn'];
-        function clearCustomVars() { const s = document.documentElement.style; MP_VARS.forEach(v => s.removeProperty(v)); }
-        // HSL(h 0-360, s 0-100, l 0-100) -> {r,g,b}
-        function hsl2rgb(h, s, l) {
-            h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
-            const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
-            let r = 0, g = 0, b = 0;
-            if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
-            else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
-            return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
-        }
-        function hex(h, s, l) { const c = hsl2rgb(h, s, l); return '#' + [c.r, c.g, c.b].map(v => v.toString(16).padStart(2, '0')).join(''); }
-        // 用主色相 h + 浓度 sat + 明暗 dark 生成整套色板
-        function genPalette(h, sat, dark) {
-            const s = Math.max(0, Math.min(100, sat));
-            const bgS = Math.min(dark ? 10 : 16, s * (dark ? 0.5 : 0.3));   // 背景只带一点点色相
-            const accL = dark ? 58 : 44;
-            const onAccent = accL >= 55 ? hex(h, 30, 12) : '#ffffff';
-            const rgb = hsl2rgb(h, s, accL);
-            if (dark) return {
-                '--bg': hex(h, bgS, 10), '--panel': hex(h, bgS, 14), '--panel2': hex(h, bgS, 18), '--panel3': hex(h, bgS, 23),
-                '--ink': hex(h, 8, 87), '--muted': hex(h, 8, 60), '--line': hex(h, bgS, 24),
-                '--user': hex(212, 45, 62), '--ai': hex(268, 46, 68),
-                '--accent': hex(h, s, accL), '--accent2': hex(h, s, 70), '--accent-rgb': `${rgb.r}, ${rgb.g}, ${rgb.b}`,
-                '--on-accent': onAccent, '--ok': hex(145, 45, 58), '--warn': hex(14, 62, 58),
+        // 下拉切换主题
+        document.getElementById('theme-select').addEventListener('change', function () {
+            applyThemeByName(this.value);
+            renderColorPickers();
+            const ta = document.getElementById('custom-css'); if (ta) ta.value = getTheme(this.value).css || '';
+            toast('已切换主题：' + this.value);
+        });
+        // 自定义 CSS：编辑即写入当前主题并实时注入
+        (function () {
+            const ta = document.getElementById('custom-css'); if (!ta) return;
+            ta.addEventListener('input', () => { const t = getTheme(currentThemeName()); t.css = ta.value; saveTheme(t); injectThemeCss(ta.value); });
+        })();
+        // 存为新主题（快照当前配色+CSS）
+        document.getElementById('theme-saveas').onclick = () => {
+            const name = (prompt('新主题名称：', '我的主题') || '').trim(); if (!name) return;
+            const a = readThemes();
+            if (a.some(t => t.name === name)) { toast('已有同名主题'); return; }
+            const cur = getTheme(currentThemeName());
+            a.push({ name, colors: Object.assign({}, cur.colors || {}), css: cur.css || '' });
+            writeThemes(a); setCurrentThemeName(name);
+            renderThemeSelect(); applyThemeByName(name); renderColorPickers();
+            toast('已存为：' + name);
+        };
+        // 删除当前主题
+        document.getElementById('theme-delete').onclick = () => {
+            let a = readThemes(); const cur = currentThemeName();
+            if (a.length <= 1) { toast('至少保留一个主题'); return; }
+            if (!confirm('删除主题「' + cur + '」？')) return;
+            a = a.filter(t => t.name !== cur); writeThemes(a);
+            const next = a[0].name; setCurrentThemeName(next);
+            renderThemeSelect(); applyThemeByName(next); renderColorPickers();
+            const ta = document.getElementById('custom-css'); if (ta) ta.value = getTheme(next).css || '';
+            toast('已删除：' + cur);
+        };
+        // 导出当前主题
+        document.getElementById('theme-export').onclick = () => {
+            const t = getTheme(currentThemeName());
+            const blob = new Blob([JSON.stringify(t, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob); const aEl = document.createElement('a');
+            aEl.href = url; aEl.download = 'mellarium-theme-' + t.name + '.json'; aEl.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+        // 导入主题（单个对象或数组）
+        document.getElementById('theme-import').onclick = () => document.getElementById('theme-file').click();
+        document.getElementById('theme-file').addEventListener('change', function () {
+            const file = this.files && this.files[0]; if (!file) return;
+            const rd = new FileReader();
+            rd.onload = () => {
+                try {
+                    const j = JSON.parse(rd.result);
+                    const arr = Array.isArray(j) ? j : [j];
+                    const a = readThemes(); let last = '';
+                    arr.forEach(it => {
+                        if (!it || typeof it.name !== 'string') return;
+                        let nm = it.name; while (a.some(t => t.name === nm)) nm = nm + '·副本';
+                        a.push({ name: nm, colors: it.colors || {}, css: it.css || '' }); last = nm;
+                    });
+                    writeThemes(a);
+                    if (last) { setCurrentThemeName(last); renderThemeSelect(); applyThemeByName(last); renderColorPickers(); const ta = document.getElementById('custom-css'); if (ta) ta.value = getTheme(last).css || ''; toast('已导入：' + last); }
+                    else toast('文件里没有可用主题');
+                } catch (e) { toast('导入失败：文件格式不对'); }
+                this.value = '';
             };
-            return {
-                '--bg': hex(h, bgS, 92), '--panel': hex(h, bgS, 98), '--panel2': hex(h, bgS, 95), '--panel3': hex(h, bgS, 90),
-                '--ink': hex(h, 22, 16), '--muted': hex(h, 14, 42), '--line': hex(h, bgS, 84),
-                '--user': hex(212, 55, 40), '--ai': hex(268, 48, 52),
-                '--accent': hex(h, s, accL), '--accent2': hex(h, s, 32), '--accent-rgb': `${rgb.r}, ${rgb.g}, ${rgb.b}`,
-                '--on-accent': onAccent, '--ok': hex(145, 48, 40), '--warn': hex(12, 62, 48),
-            };
-        }
-        function readCustomCfg() {
-            try { const j = JSON.parse(localStorage.getItem('mp_theme_custom') || ''); if (j && typeof j.h === 'number') return { h: j.h, s: j.s, dark: j.dark !== false }; } catch (e) {}
-            return { h: 42, s: 55, dark: true };
-        }
-        function applyCustom(cfg, persist) {
-            clearCustomVars();
-            document.documentElement.removeAttribute('data-theme');
-            const p = genPalette(cfg.h, cfg.s, cfg.dark);
-            const st = document.documentElement.style;
-            for (const k in p) st.setProperty(k, p[k]);
-            if (persist !== false) { try { localStorage.setItem('mp_theme', 'custom'); localStorage.setItem('mp_theme_custom', JSON.stringify(cfg)); } catch (e) {} }
-            // 预览小色块
-            const P = genPalette(cfg.h, cfg.s, cfg.dark);
-            const setBg = (id, c) => { const el = document.getElementById(id); if (el) el.style.background = c; };
-            setBg('cf-p-bg', P['--bg']); setBg('cf-p-accent', P['--accent']); setBg('cf-p-accent2', P['--accent2']); setBg('cf-p-ai', P['--ai']);
-        }
-        // 弹窗打开时把滑杆/按钮/预览同步到当前状态
-        function syncCustomUI() {
-            const cfg = readCustomCfg();
-            const isCustom = currentTheme() === 'custom';
-            document.getElementById('cf-hue').value = cfg.h;
-            document.getElementById('cf-sat').value = cfg.s;
-            document.getElementById('cf-hue-v').textContent = cfg.h;
-            document.getElementById('cf-sat-v').textContent = cfg.s;
-            document.getElementById('cf-dark').classList.toggle('active', cfg.dark);
-            document.getElementById('cf-light').classList.toggle('active', !cfg.dark);
-            document.getElementById('theme-custom').classList.toggle('active', isCustom);
-            // 预览用当前配置渲染（不落库）
-            const P = genPalette(cfg.h, cfg.s, cfg.dark);
-            const setBg = (id, c) => { const el = document.getElementById(id); if (el) el.style.background = c; };
-            setBg('cf-p-bg', P['--bg']); setBg('cf-p-accent', P['--accent']); setBg('cf-p-accent2', P['--accent2']); setBg('cf-p-ai', P['--ai']);
-        }
-        function customFromUI() {
-            return {
-                h: Number(document.getElementById('cf-hue').value),
-                s: Number(document.getElementById('cf-sat').value),
-                dark: document.getElementById('cf-dark').classList.contains('active'),
-            };
-        }
-        function pushCustom() {
-            const cfg = customFromUI();
-            document.getElementById('cf-hue-v').textContent = cfg.h;
-            document.getElementById('cf-sat-v').textContent = cfg.s;
-            applyCustom(cfg, true);
-            document.getElementById('theme-custom').classList.add('active');
-            renderThemeGrid();   // 预设卡片取消勾选
-        }
-        document.getElementById('cf-hue').addEventListener('input', pushCustom);
-        document.getElementById('cf-sat').addEventListener('input', pushCustom);
-        document.getElementById('cf-dark').onclick = () => { document.getElementById('cf-dark').classList.add('active'); document.getElementById('cf-light').classList.remove('active'); pushCustom(); };
-        document.getElementById('cf-light').onclick = () => { document.getElementById('cf-light').classList.add('active'); document.getElementById('cf-dark').classList.remove('active'); pushCustom(); };
-        document.getElementById('cf-reset').onclick = () => { applyTheme('honey'); renderThemeGrid(); syncCustomUI(); document.getElementById('theme-custom').classList.remove('active'); toast('已回到蜜金'); };
-        // 启动时若上次选的是自助配色，重新套用（防刷新丢失）
-        if (currentTheme() === 'custom') applyCustom(readCustomCfg(), false);
+            rd.readAsText(file);
+        });
+
+        // 启动：套用当前主题（防刷新丢失）
+        applyThemeByName(currentThemeName());
 
         // [MP] ============ 导出 / 导入 ============
         document.getElementById('btn-export').onclick = async () => {
@@ -2532,16 +2623,8 @@
         }
 
         // [MP] ============ 启动 ============
-        // [MP] 量顶栏实际高度写进 --hdr-h，抽屉把手吸顶时正好贴在顶栏下沿（手机上顶栏换行也不会遮住把手）
-        function syncHeaderHeight() {
-            const h = document.querySelector('header');
-            if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px');
-        }
-        window.addEventListener('resize', syncHeaderHeight);
-
         (async function init() {
             dlog('vault启动，marked=' + (!!window.marked));
-            syncHeaderHeight();
             try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
             try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
