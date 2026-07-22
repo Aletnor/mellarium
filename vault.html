@@ -355,6 +355,18 @@
         .arc-row.cur { border-color: var(--ok); background: rgba(95, 184, 122, 0.12); }
         .arc-row .arc-name { font-weight: 600; word-break: break-all; }
         .arc-row .arc-bits { flex: 1; text-align: right; }
+        /* [MP] 存档总览·角色卡分组（角色名/聊天文件名 的斜杠前段归堆） */
+        .char-card { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
+        .char-card.cur { border-color: var(--accent); }
+        .char-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; background: var(--panel2); }
+        @media (hover: hover) { .char-head:hover { background: var(--panel3); } }
+        .char-head .cc-caret { color: var(--muted); transition: transform .15s; font-size: 11px; }
+        .char-card.open .cc-caret { transform: rotate(90deg); }
+        .char-head .cc-name { font-weight: 700; color: var(--ink); flex: 1; word-break: break-all; }
+        .char-head .cc-badge { color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
+        .char-head .cc-sum { color: var(--muted); font-size: 12px; white-space: nowrap; }
+        .char-body { display: none; padding: 8px 10px 4px; }
+        .char-card.open .char-body { display: block; }
         /* [MP] 注入落点标记线 */
         /* [MP-美化] 注入标记线（图标已在 JS 里用细星 ✦，此处不加 ::before） */
         .inject-marker { border: 1px dashed rgba(var(--accent-rgb), 0.5); background: rgba(var(--accent-rgb), 0.08); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; }
@@ -588,7 +600,7 @@
             <span class="panel-title">存档总览</span>
             <span class="floor-meta" id="prose-meta"></span>
         </div>
-        <div class="floor-meta" style="margin:4px 0 8px">你给以下酒馆聊天存过档，各归各家：</div>
+        <div class="floor-meta" style="margin:4px 0 8px">按角色分组，点开卡片看该角色名下有蜜脾记录的对话：</div>
         <div id="archive-overview"></div>
         <div class="panel-title" style="margin:14px 0 6px;font-size:13px">当前聊天的正文明细</div>
         <div class="prose-legend floor-meta">
@@ -2115,24 +2127,55 @@
             return Array.from(map.values()).sort((a, b) => a.chatKey.localeCompare(b.chatKey));
         }
 
+        // [MP] chatKey="角色名/聊天文件名"，拆斜杠前段做角色、后段做对话
+        function splitChatKey(k) {
+            const s = (k || '').indexOf('/');
+            return s >= 0 ? { char: k.slice(0, s), chat: k.slice(s + 1) } : { char: k || '', chat: '' };
+        }
         async function renderArchiveOverview() {
             const wrap = document.getElementById('archive-overview');
             if (!wrap) return;
             const list = await allArchiveKeys();
             wrap.innerHTML = '';
             if (!list.length) { wrap.innerHTML = '<div class="empty">还没有任何聊天存过档</div>'; return; }
+            // 按角色名分组
+            const groups = new Map();
             list.forEach(rec => {
-                const cur = rec.chatKey === currentChatKey;
-                const row = document.createElement('div');
-                row.className = 'arc-row' + (cur ? ' cur' : '');
-                const bits = [];
-                bits.push(`正文 ${rec.prose}`);
-                bits.push(`总结 ${rec.vols}卷`);
-                bits.push(rec.codex ? '有档案' : '无档案');
-                row.innerHTML =
-                    `<span class="arc-name">${cur ? '▶ ' : ''}${esc(rec.chatKey)}</span>` +
-                    `<span class="arc-bits floor-meta">${bits.join(' · ')}${cur ? ' · 正在看' : ''}</span>`;
-                wrap.appendChild(row);
+                const { char, chat } = splitChatKey(rec.chatKey);
+                if (!groups.has(char)) groups.set(char, []);
+                groups.get(char).push(Object.assign({ chat }, rec));
+            });
+            const curChar = currentChatKey ? splitChatKey(currentChatKey).char : null;
+            Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(char => {
+                const chats = groups.get(char);
+                const isCurChar = !!curChar && char === curChar;
+                const totProse = chats.reduce((n, c) => n + c.prose, 0);
+                const totVols = chats.reduce((n, c) => n + c.vols, 0);
+                const card = document.createElement('div');
+                card.className = 'char-card' + (isCurChar ? ' cur open' : '');
+                const head = document.createElement('div');
+                head.className = 'char-head';
+                head.innerHTML =
+                    `<span class="cc-caret">▶</span>` +
+                    `<span class="cc-name">${esc(char || '(未知角色)')}</span>` +
+                    `<span class="cc-badge">${chats.length} 对话</span>` +
+                    `<span class="cc-sum">正文 ${totProse} · 总结 ${totVols}卷</span>`;
+                head.onclick = () => card.classList.toggle('open');
+                const body = document.createElement('div');
+                body.className = 'char-body';
+                chats.sort((a, b) => a.chat.localeCompare(b.chat)).forEach(c => {
+                    const cur = c.chatKey === currentChatKey;
+                    const row = document.createElement('div');
+                    row.className = 'arc-row' + (cur ? ' cur' : '');
+                    const bits = [`正文 ${c.prose}`, `总结 ${c.vols}卷`, c.codex ? '有档案' : '无档案'];
+                    row.innerHTML =
+                        `<span class="arc-name">${cur ? '▶ ' : ''}${esc(c.chat || '(无名对话)')}</span>` +
+                        `<span class="arc-bits floor-meta">${bits.join(' · ')}${cur ? ' · 正在看' : ''}</span>`;
+                    body.appendChild(row);
+                });
+                card.appendChild(head);
+                card.appendChild(body);
+                wrap.appendChild(card);
             });
         }
 
