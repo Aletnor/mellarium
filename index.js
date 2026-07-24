@@ -29,6 +29,14 @@
         return `${charName}/${chatId}`;
     }
 
+    // [MP] 把当前在线对话写进同源共享 localStorage，供蜜脾另一个标签直接读。
+    //   蜜脾在前台时酒馆这个标签常被手机冻死、桥的广播会丢；但「切/关对话」这个动作发生时酒馆一定在前台没冻，
+    //   此刻同步写盘（localStorage 是同步的，冻结前就落定），蜜脾稍后切回来一读就是最新的。
+    //   空串 = 酒馆当前没开任何对话（欢迎页/关了对话），让蜜脾据此清掉在线态，不再卡在旧对话上。
+    function persistLiveKey() {
+        try { localStorage.setItem('mp_live_chatkey', currentChatKey() || ''); } catch (e) {}
+    }
+
     function send(type, payload) {
         channel.postMessage({ type, chatKey: currentChatKey(), payload: payload ?? null });
     }
@@ -53,7 +61,10 @@
                 sendDate: m.send_date != null ? m.send_date : null, // 指纹1
             };
         });
-        return { chatKey: currentChatKey(), messages: messages, count: messages.length };
+        // [MP] 附带角色卡文件名(avatar png)：vault 直连服务器改名时要拿它当 avatar_url，缓存下来免得再问一趟
+        const avatar = (c && c.characters && c.characterId != null && c.characters[c.characterId]
+            && c.characters[c.characterId].avatar) || null;
+        return { chatKey: currentChatKey(), messages: messages, count: messages.length, avatar: avatar };
     }
 
     // [MP] 读取区间内当前采用版本原文（含user楼与#0楼，不过滤），拼接
@@ -487,6 +498,63 @@
                 })();
                 break;
             }
+            case 'rename-chat': {
+                // [MP] payload: {oldName, newName} — oldName/newName 均为聊天文件名（不带 .jsonl）
+                //   酒馆 renameChat 只认「当前打开的聊天」（内部用 this_chid/selected_group），
+                //   所以只能改在线对话；oldName 仅作安全校验，真源以 getCurrentChatId() 为准。
+                const rp = msg.payload || {};
+                (async function () {
+                    try {
+                        const c = ctx();
+                        if (!c) throw new Error('酒馆上下文未就绪');
+                        const before = c.getCurrentChatId ? c.getCurrentChatId() : null;
+                        if (!before) throw new Error('桥没定位到当前聊天，先在酒馆打开一个对话');
+                        if (rp.oldName && String(rp.oldName) !== String(before)) {
+                            send('rename-result', { ok: false, message: '要改名的不是酒馆当前打开的那个对话，先在酒馆里打开它再改' });
+                            return;
+                        }
+                        const newName = String(rp.newName == null ? '' : rp.newName).trim();
+                        if (!newName) { send('rename-result', { ok: false, message: '新名字不能为空' }); return; }
+                        if (newName === String(before)) { send('rename-result', { ok: false, message: '新名字和原来一样' }); return; }
+                        if (typeof c.renameChat !== 'function') throw new Error('酒馆没提供 renameChat（版本不符？）');
+                        // renameChat 内部自行 try/catch（失败弹酒馆的 popup 不抛错），故靠改名前后的 chatId 变化判定成败
+                        await c.renameChat(before, newName);
+                        const after = (ctx() && ctx().getCurrentChatId) ? ctx().getCurrentChatId() : before;
+                        if (after && String(after) !== String(before)) {
+                            send('rename-result', { ok: true, oldName: before, newName: after });
+                        } else {
+                            send('rename-result', { ok: false, message: '酒馆没接受这个名字（可能含非法字符/重名/被清洗）。当前名仍是「' + before + '」' });
+                        }
+                    } catch (e) {
+                        console.error(TAG, 'rename-chat failed', e);
+                        send('rename-result', { ok: false, message: String(e && e.message || e) });
+                    }
+                })();
+                break;
+            }
+            case 'rename-reconcile': {
+                // [MP] vault 已经直连服务器把 jsonl 文件＋角色卡指针改好了，这里只负责「把酒馆这个活页里的内存态对齐」：
+                //   手机后台冻结时这条消息在队列里等着，等酒馆页被切到前台解冻，立刻执行 → 内存 characters[chid].chat 改成
+                //   新名 + reloadCurrentChat 重新按新名读盘。幂等：已经是新名就跳过；不是当前打开的对话也跳过。
+                const rp = msg.payload || {};
+                (async function () {
+                    try {
+                        const c = ctx();
+                        if (!c || !c.characters || c.characterId == null) return;
+                        const ch = c.characters[c.characterId];
+                        if (!ch) return;
+                        const curId = c.getCurrentChatId ? c.getCurrentChatId() : null;
+                        if (rp.avatar && ch.avatar !== rp.avatar) return;      // 不是这张卡，不动
+                        if (!rp.oldName || String(curId) !== String(rp.oldName)) return; // 内存里不是旧名，说明已对齐或不是当前对话
+                        ch.chat = String(rp.newName || '');
+                        if (typeof c.reloadCurrentChat === 'function') await c.reloadCurrentChat();
+                        try { send('bridge-debug', { message: '改名内存态已对齐：' + rp.oldName + ' → ' + rp.newName }); } catch (e) {}
+                    } catch (e) {
+                        console.error(TAG, 'rename-reconcile failed', e);
+                    }
+                })();
+                break;
+            }
             default:
                 // 其余 type（chat-changed/chat-dirty/snapshot/pong 等）为桥自身或其他桥的广播，忽略
                 break;
@@ -508,6 +576,7 @@
             // [MP] 换聊天：注入内容按 chatKey 不同，先就地清空，等 vault 按新聊天重发，杜绝把上一个聊天的档案带过去
             injState.enabled = false; injState.text = '';
             try { applyInjection(); } catch (e) { /* 上下文可能未就绪，忽略 */ }
+            persistLiveKey();   // [MP] 切/关对话即刻写入同源 localStorage，蜜脾切回来直接读
             send('chat-changed');
         });
 
@@ -520,6 +589,7 @@
             if (e) es.on(e, function () { send('chat-dirty'); });
         });
 
+        persistLiveKey();   // [MP] 桥一就绪就把当前已开的对话写进 localStorage，蜜脾冷启动也能直接对齐
         send('bridge-online');
         console.log(TAG, '已就绪，频道', CHANNEL);
     }
