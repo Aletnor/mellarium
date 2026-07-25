@@ -4095,9 +4095,28 @@
         }
 
         // [MP] 侧边栏角色树：一排角色卡→点开展开该角色名下有蜜脾记录（或正在线）的对话
+        // [MP] 手指还按在侧栏上时别重建列表：整树推倒重画会把正在进行的滚动拦腰掐断
+        //   （胶囊"一卡一卡、每划只走一小段"的元凶——快照一到就重画，正好撞上手指在滑）。
+        //   按着就记一笔，等手指离开再画；重画完把滚动位置原样接回去。
+        let ctTouching = false, ctRerenderQueued = false;
+        (function () {
+            const sb = document.getElementById('sidebar');
+            if (!sb) return;
+            sb.addEventListener('touchstart', () => { ctTouching = true; }, { passive: true });
+            const done = () => {
+                ctTouching = false;
+                if (ctRerenderQueued) { ctRerenderQueued = false; renderCharTree().catch(() => { }); }
+            };
+            sb.addEventListener('touchend', done, { passive: true });
+            sb.addEventListener('touchcancel', done, { passive: true });
+        })();
+
         async function renderCharTree() {
             const wrap = document.getElementById('char-tree');
             if (!wrap) return;
+            if (ctTouching) { ctRerenderQueued = true; return; }
+            const sb = document.getElementById('sidebar');
+            const keepScroll = sb ? sb.scrollTop : 0;
             const list = await allArchiveKeys();
             if (currentChatKey && !list.some(r => r.chatKey === currentChatKey)) {
                 list.push({ chatKey: currentChatKey, prose: 0, vols: 0, codex: false });
@@ -4154,6 +4173,8 @@
             hint.className = 'ct-hint';
             hint.textContent = '长按对话：收进书架 / 移出 / 改名';
             wrap.appendChild(hint);
+            // [MP] 重画完把侧栏滚回原位，别让列表在你眼皮底下跳回顶部
+            if (sb && keepScroll) sb.scrollTop = keepScroll;
         }
 
         document.getElementById('btn-menu').onclick = () => {
