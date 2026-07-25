@@ -41,44 +41,111 @@
         channel.postMessage({ type, chatKey: currentChatKey(), payload: payload ?? null });
     }
 
-    // [MP] 快照：当前聊天全部消息的只读拷贝，桥不做任何加工
+    // [MP] ============ 接上酒馆自己的正则引擎 ============
+    // 以前蜜脾发给副API的是 chat[i].mes 生原文，酒馆里配的正则一条都没跑过，
+    // 于是「你在蜜脾里读到的」和「副API真正收到的」根本是两个东西。这里把两边接到同一个源头上。
+    //
+    // 净版 = isPrompt 档，也就是酒馆里勾了「仅格式化提示词」的那批脚本 + 没勾任何「仅」的通用脚本。
+    // 这正是酒馆 Generate 里 coreChat 那一步用的同一个调用（script.js 里 getRegexedString(msg, 位置, {isPrompt:true, depth})），
+    // 所以桥算出来的净版，逐字就是副API会收到的东西。
+    //
+    // engine.js 没被 getContext 暴露，但它是个 ES 模块。用和酒馆本体完全相同的绝对路径 import，
+    // 拿到的是模块注册表里同一个实例，共享同一份脚本状态，不会各洗各的。
+    let regexEngine = null;
+    async function loadRegexEngine() {
+        if (regexEngine) return regexEngine;
+        try {
+            regexEngine = await import('/scripts/extensions/regex/engine.js');
+            console.log(TAG, '酒馆正则引擎已接上');
+            send('regex-ready');   // [MP] 告诉蜜脾：净版这会儿算得出来了，可以把开关点亮
+        } catch (e) {
+            console.warn(TAG, '正则引擎载入失败，净版一律退回原文', e);
+            regexEngine = null;
+            // [MP] 手机上没有控制台，失败原因得能送到蜜脾屏幕上，否则就是一颗按不动的灰钮
+            try { send('bridge-debug', { message: '正则引擎载入失败，净版不可用：' + String(e && e.message || e) }); } catch (e2) { }
+        }
+        return regexEngine;
+    }
+
+    // [MP] depth = 从最后一条「非隐藏」消息往回数的位置，照抄酒馆算法（隐藏楼不进上下文，所以不计数）。
+    // 配了 minDepth/maxDepth 的正则脚本靠这个数决定跑不跑，算错了洗出来就跟真实发送不一致。
+    function buildDepthMap(chat) {
+        const vis = [];
+        for (let i = 0; i < chat.length; i++) if (chat[i] && !chat[i].is_system) vis.push(i);
+        const map = new Map();
+        for (let p = 0; p < vis.length; p++) map.set(vis[p], vis.length - p - 1);
+        return map;
+    }
+
+    // [MP] 洗一段文本。引擎没接上、或者洗炸了，一律原样退回：净版可以缺席，不能骗人。
+    function cleanOne(raw, isUser, depth) {
+        const s = raw != null ? String(raw) : '';
+        if (!s) return '';
+        if (!regexEngine || typeof regexEngine.getRegexedString !== 'function') return s;
+        try {
+            const p = isUser ? regexEngine.regex_placement.USER_INPUT : regexEngine.regex_placement.AI_OUTPUT;
+            const opts = { isPrompt: true };
+            if (Number.isInteger(depth)) opts.depth = depth;
+            return regexEngine.getRegexedString(s, p, opts);
+        } catch (e) {
+            console.warn(TAG, '正则清洗出错，该条退回原文', e);
+            return s;
+        }
+    }
+
+    // [MP] 快照：当前聊天全部消息的只读拷贝 + 每条的净版
     function buildSnapshot() {
         const c = ctx();
         const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
+        const dm = buildDepthMap(chat);
         const messages = chat.map(function (m, i) {
             const hasSwipes = Array.isArray(m.swipes) && m.swipes.length > 0;
             const swipes = hasSwipes ? m.swipes.slice() : [m.mes != null ? m.mes : ''];
             let swipeId = Number.isInteger(m.swipe_id) ? m.swipe_id : 0;
             if (swipeId < 0 || swipeId >= swipes.length) swipeId = 0;
+            const mes = m.mes != null ? m.mes : '';
+            const depth = dm.has(i) ? dm.get(i) : null;
+            // [MP] 净版只洗 m.mes，也就是酒馆此刻显示的那一版。
+            // 其余 swipe 一律不洗：那些版本酒馆没在显示、也从来没被送去过副API，
+            // 给它们编一个「净版」就是撒谎。净版是一张「酒馆现在长这样」的快照，不是逐版本的翻译。
+            // 洗完跟原文一模一样就传 null，让蜜脾那边自己回落。
+            const mesClean = cleanOne(mes, m.is_user, depth);
             return {
                 floorIndex: i,
                 name: m.name != null ? m.name : '',
                 is_user: !!m.is_user,
                 is_system: !!m.is_system,          // [MP] 隐藏标记
-                mes: m.mes != null ? m.mes : '',    // 当前采用版本正文
-                swipes: swipes,                     // 全部版本
-                swipeId: swipeId,                   // 当前采用版本号
+                mes: mes,                           // 当前采用版本原文
+                mesClean: mesClean === mes ? null : mesClean,   // 净版快照；null=跟原文没差别
+                swipes: swipes,                     // 全部版本原文（只在「原文」档下能翻）
+                swipeId: swipeId,                   // 酒馆此刻显示的是第几版
                 sendDate: m.send_date != null ? m.send_date : null, // 指纹1
             };
         });
         // [MP] 附带角色卡文件名(avatar png)：vault 直连服务器改名时要拿它当 avatar_url，缓存下来免得再问一趟
         const avatar = (c && c.characters && c.characterId != null && c.characters[c.characterId]
             && c.characters[c.characterId].avatar) || null;
-        return { chatKey: currentChatKey(), messages: messages, count: messages.length, avatar: avatar };
+        return {
+            chatKey: currentChatKey(), messages: messages, count: messages.length, avatar: avatar,
+            regexReady: !!regexEngine,   // [MP] false = 引擎没接上，净版这份数据是假的，蜜脾据此禁用开关
+        };
     }
 
-    // [MP] 读取区间内当前采用版本原文（含user楼与#0楼，不过滤），拼接
+    // [MP] 读取区间正文拼接，喂给副API（含user楼与#0楼，不过滤）。
+    // 这里走净版：副API收到的和你在蜜脾里切到净版看到的，是同一串字。
     function collectRangeText(rangeStart, rangeEnd) {
         const c = ctx();
         const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
         if (!Number.isInteger(rangeStart) || !Number.isInteger(rangeEnd) || rangeStart > rangeEnd)
             throw new Error('区间非法: ' + rangeStart + '~' + rangeEnd);
+        const dm = buildDepthMap(chat);
         const parts = [];
         for (let i = rangeStart; i <= rangeEnd; i++) {
             const m = chat[i];
             if (!m) throw new Error('楼层 ' + i + ' 不存在');
             const who = m.is_user ? (c.name1 || 'User') : (m.name || 'AI');
-            parts.push('【' + i + '楼·' + who + '】\n' + (m.mes != null ? m.mes : ''));
+            const txt = cleanOne(m.mes != null ? m.mes : '', m.is_user, dm.has(i) ? dm.get(i) : null);
+            parts.push('【' + i + '楼·' + who + '】\n' + txt);
         }
         return parts.join('\n\n');
     }
@@ -343,12 +410,16 @@
                 break;
             }
             case 'get-snapshot':
-                try {
-                    send('snapshot', buildSnapshot());
-                } catch (e) {
-                    console.error(TAG, 'buildSnapshot failed', e);
-                    send('error', { op: 'get-snapshot', message: String(e && e.message || e) });
-                }
+                // [MP] 先把正则引擎等到位再造快照。酒馆刚加载完那几百毫秒里 import 还没落地，
+                // 这时候直接造，快照里 regexReady 就是 false，蜜脾那边净版钮点了没反应。
+                loadRegexEngine().then(function () {
+                    try {
+                        send('snapshot', buildSnapshot());
+                    } catch (e) {
+                        console.error(TAG, 'buildSnapshot failed', e);
+                        send('error', { op: 'get-snapshot', message: String(e && e.message || e) });
+                    }
+                });
                 break;
             case 'get-models': {
                 // [MP] payload: {apiConfig} — 走 TavernHelper.getModelList（经酒馆后端同源代理，绕开CORS）
@@ -591,6 +662,8 @@
 
         persistLiveKey();   // [MP] 桥一就绪就把当前已开的对话写进 localStorage，蜜脾冷启动也能直接对齐
         send('bridge-online');
+        // [MP] 正则引擎异步载，落地后自己 send('regex-ready')，蜜脾收到再来要一次快照拿净版
+        loadRegexEngine();
         console.log(TAG, '已就绪，频道', CHANNEL);
     }
 
@@ -697,88 +770,15 @@
       }
     }
 
-    // [MP] 蜜脾面板 — 照柏宝书(Horae)那套，用酒馆原生「顶栏抽屉」把 vault.html 嵌进同一标签页。
-    // 手机上两个标签页隔空喊话，后台标签会被冻结→桥假死、要反复刷新；
-    // 同页 iframe 后桥与面板同生共死，BroadcastChannel 瞬达，永不再刷。
-    // 结构完全照酒馆原生 .drawer：开合交给酒馆自带的 .drawer-toggle 委托，不自己造轮子；
-    // 尺寸一律行内样式写死，不依赖任何会被缓存掉的独立 CSS。
-    function injectVaultPanel() {
-      try {
-        // [MP] vault.html 同源地址：优先从本脚本 src 推导，退化到已知路径
-        function vaultUrl() {
-            try {
-                const s = document.querySelector('script[src*="mellarium/index.js"]');
-                if (s && s.src) return s.src.replace(/index\.js(\?.*)?$/, 'vault.html');
-            } catch (e) {}
-            return '/scripts/extensions/third-party/mellarium/vault.html';
-        }
-
-        // [MP] 挂到酒馆顶栏容器 #top-settings-holder，跟柏宝书的时钟图标同排
-        function mountDrawer() {
-            const holder = document.getElementById('top-settings-holder');
-            if (!holder) { setTimeout(mountDrawer, 800); return; }
-            if (document.getElementById('mp_drawer')) return;
-
-            const drawer = document.createElement('div');
-            drawer.id = 'mp_drawer';
-            drawer.className = 'drawer';
-            // [MP] closedIcon/closedDrawer = 初始收起；酒馆原生点击委托会切成 openIcon/openDrawer
-            drawer.innerHTML =
-                '<div class="drawer-toggle">' +
-                    '<div id="mp_drawer_icon" class="drawer-icon fa-solid fa-book fa-fw closedIcon interactable" ' +
-                        'title="蜜脾 Mellarium" tabindex="0"></div>' +
-                '</div>' +
-                '<div id="mp_drawer_content" class="drawer-content closedDrawer" ' +
-                    'style="min-width:0;width:min(98vw,960px);height:82vh;padding:0;overflow:hidden;">' +
-                    '<iframe id="mp_vault_frame" title="蜜脾" ' +
-                        'style="width:100%;height:100%;border:0;display:block;background:#1b1b1f;"></iframe>' +
-                '</div>';
-            holder.appendChild(drawer);
-
-            // [MP] 酒馆的 $('.drawer-toggle').on('click',…) 只在初始化时对已存在抽屉绑定，
-            // 我这后加的抽屉接不上，得照 doNavbarIconClick 的逻辑自己绑等价开合（只切 class，
-            // 显隐由核心 style.css 的 .drawer-content(display:none) ↔ .openDrawer(display:block) 负责）。
-            const toggle = drawer.querySelector('.drawer-toggle');
-            const content = drawer.querySelector('#mp_drawer_content');
-            const iconEl = drawer.querySelector('#mp_drawer_icon');
-            toggle.addEventListener('click', function () {
-                const opening = !content.classList.contains('openDrawer');
-                if (opening) {
-                    // [MP] 照原生：开我之前，先把别的已开抽屉收掉
-                    document.querySelectorAll('.openDrawer:not(.pinnedOpen)').forEach(function (el) {
-                        el.classList.remove('openDrawer'); el.classList.add('closedDrawer');
-                    });
-                    document.querySelectorAll('.openIcon:not(.drawerPinnedOpen)').forEach(function (el) {
-                        el.classList.remove('openIcon'); el.classList.add('closedIcon');
-                    });
-                    // [MP] 首次点开才给 iframe 上 src；之后只切显隐、iframe 常驻不重载→BroadcastChannel 长连不断
-                    const frame = drawer.querySelector('#mp_vault_frame');
-                    if (frame && !frame.getAttribute('src')) frame.setAttribute('src', vaultUrl());
-                    content.classList.remove('closedDrawer'); content.classList.add('openDrawer');
-                    iconEl.classList.remove('closedIcon'); iconEl.classList.add('openIcon');
-                } else {
-                    content.classList.remove('openDrawer'); content.classList.add('closedDrawer');
-                    iconEl.classList.remove('openIcon'); iconEl.classList.add('closedIcon');
-                }
-            });
-            console.log(TAG, '顶栏抽屉已挂载 #mp_drawer（自绑开合）');
-        }
-
-        mountDrawer();
-      } catch (e) {
-        try { alert('[蜜脾] 面板注入失败：' + (e && e.message || e)); } catch (_) {}
-        console.error(TAG, '面板注入失败', e);
-      }
-    }
+    // [MP] 顶栏抽屉（把 vault.html 嵌成 iframe 的那套）已整体拆除。
+    // Miel 一直是当独立网页开蜜脾的，抽屉属搁置分支，留着只会误导「还有个 iframe 宿主」。
+    // 桥不依赖它：BroadcastChannel 是同源跨标签页通信，两边各自开着就能对上话。
 
     injectJumpWidget();
-    injectVaultPanel();
-    // [MP] 酒馆界面/斜杠解析器可能晚于桥就绪，延时再注一次（各有防重不会叠）
+    // [MP] 酒馆界面/斜杠解析器可能晚于桥就绪，延时再注一次（有防重不会叠）
     setTimeout(injectJumpWidget, 2500);
-    setTimeout(injectVaultPanel, 2500);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', injectJumpWidget);
-        document.addEventListener('DOMContentLoaded', injectVaultPanel);
     }
 
     wireEvents();

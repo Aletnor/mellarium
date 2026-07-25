@@ -4,55 +4,414 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- [MP] 掐掉双指捏合缩放，做成 App 手感。
+         缩放本来就是网页默认待遇，一直都在；只是 html 锁死不滚之后，
+         「放大后整页被手指拖着跑」没了文档滚动打掩护，暴露得很难受。
+         maximum-scale 和 user-scalable 一起写：老 WebView 认后者，较新的引擎出于无障碍会忽略后者、但仍吃前者。
+         注意这只掐页面自己的缩放，系统级辅助功能放大不受影响。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>蜜脾 Mellarium</title>
     <!-- [MP] 站点图标：Miel 设计的几何蜂 logo -->
     <link rel="icon" type="image/svg+xml" href="logo.svg" />
     <!-- [MP] marked 本地单文件，不走CDN；缺失时回退纯文本渲染 -->
     <script src="lib/marked.min.js" defer></script>
     <style>
-        /* [MP-美化] 主题基座：蜜金暖调暗色（默认）。切主题只覆盖 body[data-theme=xxx] 里的色板变量 */
+        /* [MP-美化] 主题基座。皮肤只覆盖 :root[data-theme=xxx] 里的色板变量。
+           变量分四层，改皮肤照这四层填就不会漏：
+             1 色相层  accent/accent2/accent-rgb（主题色）· sel/sel2/sel-rgb（选中撞色）· h/a（楼层身份色）
+             2 面层    sf-*（控件白面）· panel*（玻璃面）· read*（阅读面）· fill-*（中性填充/分隔）
+             3 语义层  ok/warn（状态）· on-accent/on-sel/on-h/on-a（压在色块上的字色，按亮度选黑白）
+             4 材质层  glass-line/shadow-rgb/wash-rgb/wash-a/veil-rgb/veil-a（玻璃边、阴影、磨砂纱、底图罩纱）
+           暗色皮肤把 2 层整组翻面 + 3 层字色转黑即可，正文规则一律不写死颜色。 */
         :root {
             /* [MP-美化] Liquid Glass：暖蜜金亮调玻璃底，讲究/柔软/轻盈 */
             --bg: #f7f0e1;                 /* 页面/阅读面基色，暖白 */
             --panel: rgba(255, 253, 248, 0.72);   /* 玻璃面板，靠 backdrop-filter 磨底 */
             --panel2: rgba(255, 255, 255, 0.52);
             --panel3: rgba(250, 244, 232, 0.62);
+            --panel-hi: rgba(255, 253, 248, 0.85);  /* [MP-美化] 弹窗/调试面板：比 panel 更实 */
             --ink: #33302a;
             --muted: #635a4b;
+            --muted-side: #514a3c;   /* [MP-美化] 侧栏底比正文亮一档，次要文字单独压深；暗色皮肤反过来要提亮 */
             --line: rgba(150, 115, 45, 0.14);     /* 柔和暖线，几乎化进背景 */
-            --user: #b07d2a;
-            --ai: #8a6cd0;
-            --accent: #c17a3a;             /* [MP-美化] 暖橘棕：焦糖橘偏棕，暖而不刺 */
-            --accent2: #d9995a;
-            --accent-rgb: 193, 122, 58;   /* accent 的 rgb，供聚焦光晕/描边等半透明处用 */
-            --on-accent: #ffffff;          /* accent 作背景时上面的文字色 */
-            --ok: #4c9f6f;
-            --warn: #c0603f;
+
+            /* [MP-美化] 面层：全站"白面"收进这 6 个变量，暗色皮肤整组翻面就够，不用逐条改规则 */
+            --sf: rgba(255, 255, 255, 0.55);        /* 标准控件面：按钮/输入框/下拉 */
+            --sf-strong: rgba(255, 255, 255, 0.92); /* 实心抬起面：chatkey/折叠区可用按钮 */
+            --sf-soft: rgba(255, 255, 255, 0.40);   /* 弱行面：清单行/条目 */
+            --sf-hover: rgba(255, 255, 255, 0.86);  /* 悬停提亮 */
+            --sf-dim: rgba(255, 255, 255, 0.34);    /* 禁用面 */
+            --sf-solid: #fffdf8;                    /* 不透明实底：改名弹窗/开关滑块 */
+            /* [MP-美化] 阅读面：楼层卡与正文，跟控件面分开调，暗色皮肤这里最要紧 */
+            --read: rgba(255, 253, 249, 0.80);
+            --read-body: rgba(255, 253, 249, 0.90);
+            --read-ink: #3d382f;
+
+            /* [MP-美化] 中性填充：分隔线渐变 / 代码底 / 开关轨道。浅色皮肤跟着 shadow-rgb 走，暗色皮肤改成白基 */
+            --fill-1: rgba(var(--shadow-rgb), 0.07);
+            --fill-2: rgba(var(--shadow-rgb), 0.16);
+            --fill-3: rgba(var(--shadow-rgb), 0.30);
+
+            /* [MP-美化] 皮肤统调变量：阴影底色 / 毛玻璃纱色与浓度 / 底图罩纱色与浓度
+               veil = 盖在底图上的一层平涂色（alpha 叠色，不是 multiply）。浅色皮肤 a=0 不盖，
+               暗色皮肤盖一层暗纱把底图压进夜里，图还是图，只是调子暗下来 */
+            --shadow-rgb: 90, 65, 20;
+            /* [MP-美化] 纱色 = 取本皮肤主色 --accent 的色相（曾经取辅色 --sel，撞色铺满一屏太跳，已弃）。
+               亮皮肤把亮度推到 89.5%、饱和度留 80%，暗皮肤压到亮度 9.5%、饱和度 95%。
+               通道跨度约 43~46/255，默认 30% 浓度上屏还剩 13/255：读得出色温，又不至于变成一层彩色玻璃纸。
+               这层归色相层，每款皮肤各定各的；浓度 --wash-a 归下面那行统一管，两码事别混。 */
+            --wash-rgb: 250, 231, 207;
+            /* [MP-美化] --wash-a 是全皮肤统一的磨砂纱浓度，唯一真源就在这一行。
+               皮肤只定纱的颜色 --wash-rgb，浓度一律不覆盖；
+               外观里的「磨砂透明度」滑杆靠 :root 内联样式改写它（内联优先级高于任何选择器）。
+               滑杆读数 = 透明度% = (1 − wash-a) × 100，默认 0.30 即 70%。 */
+            --wash-a: 0.30;
+            --veil-rgb: 255, 255, 255;
+            --veil-a: 0;
+
+            /* [MP-美化] 楼层身份色：H=蜜色主色本体、A=赤陶辅色本体，跟本皮肤的双色一比一对齐；每款各自覆盖。
+               --a 直接等于 --sel，这跟 rose/letter/wisteria/robin 四款同规矩。
+               H 这块有个别款没有的难处：默认款主辅色相只隔 22°（现役最窄的 letter 都有 48°），
+               光靠色相分不开两块牌。第一版想拿亮度补，把 H 压到亮度 27% 换分离度——压出一坨深茶褐，
+               完全不像蜜色，等于把「H=主色」这诉求本身弄丢了。错在「铭牌一定压白字」这前提：
+               蜜色本体 #c38d37 太亮，压白字只有 2.92，为够 4.5 才被迫往死里压深。
+               改法是反过来动字不动底：H 用蜜色本体 + 深褐字 #2f160e，对比 5.79，蜜色终于长成蜜色。
+               子夜蜜灯 / 深海夜光两款的 H 牌本来就是浅底深字，这不是新造的路。
+               两块牌天生明暗反相：H 浅蜜底深字 / A 赤陶深底白字，扫一眼就分开，比硬掰亮度还干净。 */
+            --h: #e0a860;   /* [MP] H 牌 = 亮蜜金本体（发亮档，不进正文），配深字 --on-h，对比 8.33 */
+            --a: #d97757;   /* [MP] A 牌 = Claude 赤陶橙本体，默认款用深字 --on-a（下方 :root:not([data-theme]) 覆盖），对比 5.64 */
+            --on-h: #2f160e;                 /* [MP] 深字：默认款蜜金 H 用它 8.00；也给五款浅皮的 H 牌继承 */
+            --on-a: #ffffff;                 /* [MP] 白字：留给五款浅皮的 A 牌继承；默认款在下方覆盖成深字 */
+
+            /* [MP-美化] 琥珀 = 子夜蜜灯的白天版：底层保持白天，前景走蜜金。分两档蜜：
+               亮蜜金 #e0a860 只留给会发亮的地方（H 铭牌、色卡），当字色在白底上只有 1.10 会化没，所以不进正文；
+               --accent 这档压到深蜜金 #b1782f，专供当字/线用：标题压面板 1.96（白底能读了），当填充压深字 4.69。
+               黄是全色相里最亮那档，白底上想当字就必须压深，这是物理，不是屎色（避开了 L<45 且 S>65 的芥末区）。 */
+            --accent: #b1782f;
+            --accent2: #c99858;           /* [MP-美化] 比 accent 亮一档的蜜，给侧栏铭牌/分隔线/按钮 hover 用 */
+            --accent-rgb: 177, 120, 47;   /* accent 的 rgb，供聚焦光晕/描边等半透明处用 */
+            /* [MP-美化] 按钮直接用 accent 深蜜金作填充，配深字（默认款 --on-accent 在下方压深，4.69）。
+               hover 用 --btn-hi 更亮一档，深字不动，对比只增不减。 */
+            --btn: var(--accent);
+            --btn-hi: var(--accent2);
+            /* [MP-美化] 撞色 = Claude 赤陶橙 #d97757（色相 14.8° / 亮度 60% / 饱和 63%，比旧 #e2604f 饱和低一档、更暖）。
+               当填充/铭牌压深字 5.64；当选中线/激活字压奶白面板只有 1.63，偏软，是白天底的本分。
+               只在选中/激活态露头，不做正文，所以这点软能接受。 */
+            --sel: #d97757;
+            --sel2: #e1937a;              /* [MP-美化] Claude 橙的提亮档，hover 用它 */
+            --sel-rgb: 217, 119, 87;
+            --on-accent: #ffffff;          /* [MP] :root 留白：给 rose/letter/wisteria/robin/inkwash 五款继承（它们填充是深色需白字）；默认款在下方压深 */
+            --on-sel: #ffffff;             /* [MP] 同上，默认款在下方 :root:not([data-theme]) 覆盖成深字 */
+            --ok: #3f8f66;
+            --ok-rgb: 63, 143, 102;
+            --warn: #a5233a;
+            --warn-rgb: 165, 35, 58;
             --radius: 18px;
             --radius-sm: 12px;
             --gap: 12px;
             /* [MP-美化] 玻璃辅助变量：磨砂 + 柔阴影替硬边框 + 玻璃高光边 */
             --glass-blur: blur(22px) saturate(1.6);
             --glass-line: rgba(255, 255, 255, 0.9);   /* [MP-美化] 浅色框统一白边：从半透明提到近实白，边线清晰不发灰 */
-            --shadow-sm: 0 2px 10px rgba(90, 65, 20, 0.06);
-            --shadow: 0 8px 28px rgba(90, 65, 20, 0.10);
-            --shadow-lg: 0 20px 60px rgba(90, 65, 20, 0.16);
+            --shadow-sm: 0 2px 10px rgba(var(--shadow-rgb), 0.06);
+            --shadow: 0 8px 28px rgba(var(--shadow-rgb), 0.10);
+            --shadow-lg: 0 20px 60px rgba(var(--shadow-rgb), 0.16);
         }
 
+        /* [MP-美化] 默认款（蜜渍琥珀，无 data-theme）专属：把 on-accent/on-sel/on-a 压成深字，
+           好让亮蜜金/亮珊瑚的填充上压深字读得出（夜灯白天版的字色，8.39 / 5.04）。
+           单独开这块，是因为 :root 那层的白字要留给五款浅皮继承，不能在 :root 直接翻深；
+           :root:not([data-theme]) 只命中默认款（其余七款都带 data-theme），精确隔离。 */
+        :root:not([data-theme]) {
+            --on-accent: #1e1810;
+            --on-sel: #1e1810;
+            --on-a: #1e1810;
+        }
+
+        /* [MP-美化] ===== 浅色皮肤：只覆盖色相/材质，面层继承 :root ===== */
+        /* 尘埃玫瑰：灰粉 × 雾蓝撞色 */
+        :root[data-theme="rose"] {
+            --bg: #f7eef1;
+            --panel: rgba(255, 250, 252, 0.72);
+            --panel3: rgba(250, 238, 243, 0.62);
+            --panel-hi: rgba(255, 250, 252, 0.85);
+            --ink: #362e33;
+            --muted: #6d5a63; --muted-side: #594751;
+            --line: rgba(185, 110, 135, 0.16);
+            --accent: #c96f88;
+            --accent2: #dc8fa4;
+            --accent-rgb: 201, 111, 136;
+            --btn: #b04f6d; --btn-hi: #98405b;
+            --sel: #5570b8;               /* 雾蓝压深到对白字 4.7:1，做实心选中块才不糊 */
+            --sel2: #6b86cc;
+            --sel-rgb: 85, 112, 184;
+            --h: #b05873; --a: #5570b8;   /* [MP-美化] H/A 身份色=本皮肤双色 */
+            --ok: #3f8f66; --ok-rgb: 63, 143, 102;
+            --warn: #c1531f; --warn-rgb: 193, 83, 31;   /* 主题色是粉红，警告改烧橙才分得开 */
+            --read: rgba(255, 252, 253, 0.80);
+            --read-body: rgba(255, 252, 253, 0.90);
+            --shadow-rgb: 95, 45, 60;
+            --wash-rgb: 250, 207, 219;   /* 纱取主色桃粉的色相 */
+        }
+        /* 沉水信笺：黛青 × 靛蓝撞色，旧信纸沉进水里那种青 */
+        :root[data-theme="letter"] {
+            --bg: #ecf3f0;
+            --panel: rgba(248, 252, 250, 0.72);
+            --panel3: rgba(235, 244, 241, 0.62);
+            --panel-hi: rgba(248, 252, 250, 0.85);
+            --ink: #2b3633;
+            --muted: #566761; --muted-side: #45544f;
+            --line: rgba(60, 125, 112, 0.16);
+            --accent: #38897c;
+            --accent2: #57a795;
+            --accent-rgb: 56, 137, 124;
+            --btn: #2e7266; --btn-hi: #256055;
+            --sel: #4a6ead;
+            --sel2: #6183c2;
+            --sel-rgb: 74, 110, 173;
+            --h: #35786d; --a: #4a6ead;
+            --ok: #4a8f30; --ok-rgb: 74, 143, 48;   /* 主题色是黛青，成功色改草绿避开 */
+            --warn: #c0522f; --warn-rgb: 192, 82, 47;
+            --read: rgba(252, 255, 254, 0.80);
+            --read-body: rgba(252, 255, 254, 0.90);
+            --read-ink: #2f3a37;
+            --shadow-rgb: 25, 70, 62;
+            --wash-rgb: 207, 250, 243;   /* 纱取主色松青的色相 */
+        }
+        /* 紫藤月白：紫藤 × 兰紫，月白冷底 */
+        :root[data-theme="wisteria"] {
+            --bg: #f2f0f8;
+            --panel: rgba(251, 250, 254, 0.72);
+            --panel3: rgba(242, 239, 249, 0.62);
+            --panel-hi: rgba(251, 250, 254, 0.85);
+            --ink: #332e3c;
+            --muted: #635a71; --muted-side: #52495f;
+            --line: rgba(125, 105, 185, 0.15);
+            --accent: #7a5fbd;            /* 原 #8b76c8 压白字只有 3.8:1，压深到 5:1 */
+            --accent2: #9a86d4;
+            --accent-rgb: 122, 95, 189;
+            --btn: #7a5fbd; --btn-hi: #684ea8;
+            --sel: #a84f80;
+            --sel2: #bd6a99;
+            --sel-rgb: 168, 79, 128;
+            --h: #6b53ab; --a: #a84f80;
+            --ok: #3f9a6b; --ok-rgb: 63, 154, 107;
+            --warn: #c0603f; --warn-rgb: 192, 96, 63;
+            --read: rgba(253, 252, 255, 0.80);
+            --read-body: rgba(253, 252, 255, 0.90);
+            --read-ink: #363143;
+            --shadow-rgb: 62, 48, 100;
+            --wash-rgb: 219, 207, 250;   /* 纱取主色兰紫的色相 */
+        }
+        /* 青鸾赤羽：朱红 × 松绿撞色 */
+        :root[data-theme="robin"] {
+            --bg: #f6f2e8;
+            --panel: rgba(255, 252, 246, 0.72);
+            --panel3: rgba(248, 242, 232, 0.62);
+            --panel-hi: rgba(255, 252, 246, 0.85);
+            --ink: #332f29;
+            --muted: #665c4e; --muted-side: #544b3e;
+            --line: rgba(155, 80, 60, 0.15);
+            --accent: #c04d3e;
+            --accent2: #d4715f;
+            --accent-rgb: 192, 77, 62;
+            --btn: #b4463a; --btn-hi: #9c3830;
+            --sel: #3e7d52;
+            --sel2: #4f9666;
+            --sel-rgb: 62, 125, 82;
+            --h: #b4483a; --a: #3e7d52;
+            --ok: #5c7412; --ok-rgb: 92, 116, 18;   /* 撞色本身就是绿，成功色改苔绿才不混 */
+            --warn: #8a1d42; --warn-rgb: 138, 29, 66;  /* 主题色本身是朱红，警告改绛梅红，色相+亮度双拉开 */
+            --shadow-rgb: 100, 42, 32;
+            --wash-rgb: 250, 212, 207;   /* 纱取主色朱红的色相 */
+        }
+        /* 宣纸松烟：松烟墨 × 印泥朱，文人画底 */
+        :root[data-theme="inkwash"] {
+            --bg: #f4f2ec;
+            --panel: rgba(252, 251, 248, 0.72);
+            --panel3: rgba(244, 242, 236, 0.62);
+            --panel-hi: rgba(252, 251, 248, 0.85);
+            --ink: #2d2e33;
+            --muted: #62625d; --muted-side: #50504b;
+            --line: rgba(80, 85, 100, 0.16);
+            --accent: #4d5566;
+            --accent2: #6b7488;
+            --accent-rgb: 77, 85, 102;
+            --btn: #4d5566; --btn-hi: #3e4555;
+            --sel: #ad5346;
+            --sel2: #c26a5c;
+            --sel-rgb: 173, 83, 70;
+            --h: #39404e; --a: #a04437;   /* H 压深到浓墨，跟主题色的中调石板灰拉开一档 */
+            --ok: #3f8f66; --ok-rgb: 63, 143, 102;
+            --warn: #a8342a; --warn-rgb: 168, 52, 42;
+            --read-ink: #33343a;
+            --shadow-rgb: 42, 46, 56;
+            --wash-rgb: 207, 221, 250;   /* 纱取主色墨蓝灰的色相：宣纸上那点冷灰 */
+        }
+
+        /* [MP-美化] ===== 暗色皮肤：面层整组翻面（白基低透明度叠在暗底上），色块上的字转深 ===== */
+        /* 子夜蜜灯：暗棕底 + 蜜金主色 × 赤铜撞色，默认琥珀的夜面 */
+        :root[data-theme="nightamber"] {
+            --bg: #211a12;
+            /* [MP-美化] 底图透过率拉到 50%+ 后底图是真亮的，承字的面必须自己站住：
+               panel 加厚，panel2 从「白纱提亮」翻成暗面（白纱在亮底图上会跟着一起亮，字就糊了） */
+            --panel: rgba(40, 33, 24, 0.82);
+            --panel2: rgba(34, 27, 19, 0.68);
+            --panel3: rgba(52, 44, 33, 0.92);
+            --panel-hi: rgba(32, 26, 19, 0.92);
+            --ink: #ece5d6;
+            --muted: #b8ab94; --muted-side: #cabea8;
+            --line: rgba(230, 190, 110, 0.16);
+            --sf: rgba(255, 255, 255, 0.08);
+            --sf-strong: rgba(255, 255, 255, 0.13);
+            --sf-soft: rgba(255, 255, 255, 0.05);
+            --sf-hover: rgba(255, 255, 255, 0.16);
+            --sf-dim: rgba(255, 255, 255, 0.04);
+            --sf-solid: #241e16;
+            --read: rgba(38, 31, 23, 0.82);
+            --read-body: rgba(36, 30, 22, 0.92);
+            --read-ink: #e4dcca;
+            --fill-1: rgba(255, 255, 255, 0.06);
+            --fill-2: rgba(255, 255, 255, 0.14);
+            --fill-3: rgba(255, 255, 255, 0.22);
+            --accent: #e0a860;
+            --accent2: #f0c188;
+            --accent-rgb: 224, 168, 96;
+            --btn: var(--accent); --btn-hi: var(--accent2);   /* [MP-美化] 暗色皮肤 hover 往亮走，字是深的，对比度只增 */
+            --sel: #d97757;                                   /* [MP] 辅色改 Claude 赤陶橙（原 #e2604f 饱和过高） */
+            --sel2: #e1937a;
+            --sel-rgb: 217, 119, 87;
+            --on-accent: #1e1810; --on-sel: #1e1810;
+            --h: #e0a860; --a: #d97757;                       /* [MP] H/A 跟主辅色走：H=主色蜜金 A=辅色 Claude橙 */
+            --on-h: #1e1810; --on-a: #1e1810;
+            --ok: #5cbb85; --ok-rgb: 92, 187, 133;
+            --warn: #e2536b; --warn-rgb: 226, 83, 107;
+            --glass-line: rgba(255, 255, 255, 0.10);
+            --shadow-rgb: 0, 0, 0;
+            /* [MP-美化] 纱浓度不在这儿定（上收到 :root 由滑杆统管），皮肤只管纱是什么颜色。
+               罩纱 veil 仍归皮肤：它是暗皮肤把底图压进夜里的那层，跟毛玻璃是两回事。
+               默认透过率 = (1−0.26)×(1−0.30) = 51.8% */
+            --wash-rgb: 47, 27, 1;      /* 纱取主色蜜琥珀的色相：暗面上的一层蜜色玻璃 */
+            --veil-rgb: 22, 16, 9;
+            --veil-a: 0.26;
+        }
+        /* 深海夜光：暗靛底 + 青蓝主色 × 珊瑚橙撞色 */
+        :root[data-theme="abyss"] {
+            --bg: #182028;
+            /* [MP-美化] 同子夜蜜灯：透过率过半后加厚承字面，panel2 翻成暗面 */
+            --panel: rgba(26, 37, 47, 0.84);
+            --panel2: rgba(22, 32, 41, 0.68);
+            --panel3: rgba(34, 48, 61, 0.92);
+            --panel-hi: rgba(21, 30, 39, 0.92);
+            --ink: #dfe8ee;
+            --muted: #a4b6c3; --muted-side: #b8c8d3;
+            --line: rgba(120, 190, 220, 0.16);
+            --sf: rgba(255, 255, 255, 0.08);
+            --sf-strong: rgba(255, 255, 255, 0.13);
+            --sf-soft: rgba(255, 255, 255, 0.05);
+            --sf-hover: rgba(255, 255, 255, 0.16);
+            --sf-dim: rgba(255, 255, 255, 0.04);
+            --sf-solid: #18222b;
+            --read: rgba(24, 34, 43, 0.82);
+            --read-body: rgba(23, 32, 41, 0.92);
+            --read-ink: #d8e2ea;
+            --fill-1: rgba(255, 255, 255, 0.06);
+            --fill-2: rgba(255, 255, 255, 0.14);
+            --fill-3: rgba(255, 255, 255, 0.22);
+            --accent: #5fb8c8;
+            --accent2: #8ad3df;
+            --accent-rgb: 95, 184, 200;
+            --btn: var(--accent); --btn-hi: var(--accent2);   /* [MP-美化] 暗色皮肤 hover 往亮走，字是深的，对比度只增 */
+            --sel: #e08050;
+            --sel2: #ef9a6e;
+            --sel-rgb: 224, 128, 80;
+            --on-accent: #0e161c; --on-sel: #1d1109;
+            --h: #86b8d6; --a: #e39a6a;
+            --on-h: #0e161c; --on-a: #1d1109;
+            --ok: #56c07a; --ok-rgb: 86, 192, 122;
+            --warn: #e2685f; --warn-rgb: 226, 104, 95;
+            --glass-line: rgba(255, 255, 255, 0.10);
+            --shadow-rgb: 0, 0, 0;
+            /* [MP-美化] 同子夜蜜灯。罩纱跟它统一成 0.26：原来那 0.02 的差是旧值残留，肉眼看不出来，删掉这个假精度 */
+            --wash-rgb: 1, 40, 47;      /* 纱取主色青蓝的色相：跟冷靛罩纱同向，之前那层暖橙纱压在冷底上太别扭，撤了 */
+            --veil-rgb: 10, 16, 22;
+            --veil-a: 0.26;
+        }
 
         * { box-sizing: border-box; }
 
+        /* [MP] 幽灵滚动条·终解。这台老 WebView 不认 ::-webkit-scrollbar，CSS 藏不掉那条原生浮层滚动条；
+           蜜脾又是当独立网页开的，最外层视口外面没有任何东西可以拿来裁它。
+           解法就一句：把滚动从「文档」搬进「body 这个元素」。
+           html 锁死不滚，那条浮层滚动条是视口级的，没得可显；body 自己滚，老 WebView 不给元素滚动容器画它。
+           fixed 元素（侧栏/弹窗/横幅/调试条）挂在视口上，视口没变，一个都不用补偿。
+           代价：文档不再滚动，靠文档滚动触发的浏览器行为（典型是地址栏自动收起）会失效——这台本来就常驻不收，不受影响。
+           配套：拖拽里三处 window.scrollBy 会变成空操作，必须改滚 body，见 mpScrollBy()。
+
+           光锁 html 不够：滚动容器自己的右边缘照样会画那条浮层滚动条。
+           所以还要把滚动层往右撑出 20px，让外层把带滚动条那条裁掉，内侧补回等宽 padding，正文净宽不变。
+
+           撑宽的写法换过三轮，前两轮都哑火，别再走回头路：
+             ✗ width: calc(100% + var(--mp-sbclip))  这台老 WebView 不认「CSS 变量嵌在 calc() 里」，
+               加宽整条失效、padding-right 却照常生效 → 正文被硬压窄 20px 还贴左，顶栏短一截、右边空一大条。
+             ✗ margin-right: -20px  同样没能把盒子撑开，症状一模一样。
+             ✓ position: absolute + right: -20px  最古老的定位撑宽，老引擎没有不认的道理。
+
+           但只做到这一步还差一口气：当时是 body 自己充当滚动层、直接撑出视口 20px，
+           于是「溢出」挂在了视口上——手指往左右一拨，整页能被拽出一条缝，松手橡皮筋弹回来。
+           overflow-x:hidden 拦不住它，钉 scrollLeft 也没用（回弹根本不改 scrollLeft）。
+           所以再插一层 #mp-scroll，把三个角色彻底拆开：
+             html      锁视口，谁都别想滚它
+             body      当裁刀（自己不滚、不溢出）
+             #mp-scroll 当滚动层，只有它比裁刀宽 20px，滚动条被挤到裁切线外
+           这样溢出全关在页面内部，视口零溢出，整页就再也拖不动了。
+           注意 overflow 传播规则：html 的 overflow 非 visible 时才轮不到 body 的值上位；
+           html 这里是 hidden，所以 body 的 hidden 是真裁剪，不会被顶到视口去。 */
+
+        html {
+            height: 100%;
+            overflow: hidden;   /* 文档级不滚→视口那条浮层滚动条没得显。同时保证 body 的 overflow 不上位到视口 */
+            /* [MP] 兜底底色从 body 挪到这里。滚动容器不再把自己的背景「上交」给画布，
+               会就地画成一块不透明实底，把 z-index 为负的 html::before(水彩)/::after(毛玻璃) 整个压死，
+               全屏只剩一片平奶油。挂在 html 上则是根元素背景，正常铺画布，水彩照样浮在它上面。 */
+            background: var(--bg);
+        }
+
         body {
             margin: 0;
+            height: 100%;
+            position: relative;   /* 给 #mp-scroll 当定位锚 */
+            overflow: hidden;     /* 裁刀：把 #mp-scroll 右边探出的那 20px 连同滚动条切掉 */
             color: var(--ink);
-            /* [MP-美化] 水彩底改用真图（html::before 视口固定铺满），body 只留个兜底底色 */
-            background: #f7f0e1;
-            min-height: 100vh;
+            /* [MP] 必须透明：底色由 html 提供，见上。这里但凡有色就会遮住水彩 */
+            background: transparent;
+            box-sizing: border-box;
             /* [MP-美化] */
             font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
             font-weight: 400;
             -webkit-font-smoothing: antialiased;
+        }
+
+        /* [MP] 真正在滚的那一层。
+           四边不再贴视口，而是跟磨砂玻璃那块矩形（html::after）严丝合缝对齐：
+           上 = 顶栏实高 + 6（那 6px 是故意漏出来的原水彩细缝），左 / 下 = 5px。
+           这样正文往上划是在玻璃的上沿消失，不会先穿过细缝、再钻到顶栏底下；
+           抽屉图标、楼层自己的弹窗一律被裁在玻璃里，整段滑动全程不出框。
+           右边仍旧探出 20px 去挨 body 那把裁刀（把原生滚动条挤出裁切线），
+           padding-right 相应给到 25px：25 − 20 = 5，正文右沿正好落回玻璃右沿。
+           top 用变量，但绝不能写成 calc(var(--x) + 6px)——这台 WebView 不认 calc 里嵌变量，
+           那 6px 由 JS 先加好再整个写进 --mp-glasstop。 */
+        #mp-scroll {
+            position: absolute;
+            top: var(--mp-glasstop, 54px);
+            left: 5px;
+            bottom: 5px;
+            right: -20px;
+            padding-right: 25px;   /* 20 拿去挨刀 + 5 对齐玻璃右沿 */
+            box-sizing: border-box;
+            overflow-y: auto;
+            overflow-x: hidden;
+            /* [MP] 别在这里加 -webkit-overflow-scrolling: touch。老 WebView 上它会把这层提成独立合成层，
+               backdrop-filter 取不到底，html::after 那层毛玻璃退化成死板平色块，圆角和内缩边被刻得一清二楚。 */
         }
 
         /* [MP-美化] 真水彩底图：视口固定铺满，这层不洗，保持原色——边缘那一圈露的就是它 */
@@ -64,7 +423,16 @@
             pointer-events: none;
             /* [MP-美化] 默认水彩底 bg.jpg；选了背景库里的图时，JS 注入 <style id=mp-bg-style> 只覆盖 background-image
                （老 WebView 认伪元素的样式表规则，不认 CSS 变量塞巨长 data URL，这样才生效） */
-            background: url('bg.jpg') center top / cover no-repeat;
+            background-color: var(--bg);
+            background-image: url('bg.jpg');
+            background-position: center top;
+            background-size: cover;
+            background-repeat: no-repeat;
+            /* [MP-美化] 底图罩纱。原来用 background-blend-mode:multiply 压暗，暗皮肤的 --bg 接近纯黑，
+               乘上去等于把任何图都乘成黑板，自定义背景直接看不见了。改成一层平涂暗纱：
+               alpha 叠色只压亮度不吃细节，图还认得出来，四周露出的那圈也不会亮成白框。
+               用 inset box-shadow 铺满（spread 够大即可），这样 JS 只覆盖 background-image 时罩纱不会被冲掉。 */
+            box-shadow: inset 0 0 0 2000px rgba(var(--veil-rgb), var(--veil-a));
         }
         /* [MP-美化] 悬浮毛玻璃：四周留一圈边（inset），边外露出没洗过的原水彩，中间磨砂+调淡；
            tint 的 rgba 越大越淡，inset 越大露的原图越多；老 WebView 不认 backdrop-filter 就退成一块淡白纱 */
@@ -72,22 +440,29 @@
         html::after {
             content: "";
             position: fixed;
-            inset: 54px 5px 5px 5px;
+            /* [MP] 从 inset 简写拆成四条长写法：顶边要跟着顶栏实高走（JS 写 --mp-glasstop）。
+               #mp-scroll 的四边照抄这四个值，两者必须一模一样，正文才会正好在玻璃沿上消失。 */
+            top: var(--mp-glasstop, 54px);
+            right: 5px;
+            bottom: 5px;
+            left: 5px;
             z-index: -1;
             pointer-events: none;
             border-radius: 16px;
-            background: rgba(255, 255, 255, 0.34);
+            background: rgba(var(--wash-rgb), var(--wash-a));
             -webkit-backdrop-filter: blur(14px);
             backdrop-filter: blur(14px);
-            box-shadow: 0 10px 34px rgba(80, 60, 20, 0.12);
+            box-shadow: 0 10px 34px rgba(var(--shadow-rgb), 0.12);
         }
         /* [MP-美化] 外观里关掉毛玻璃：整片磨砂层撤掉，背景就是原水彩直出 */
         html[data-glass="off"]::after { display: none; }
 
         /* [MP-美化] 顶栏磨砂玻璃，柔阴影 + 玻璃高光边 */
         header {
-            position: sticky;
-            top: 0;
+            /* [MP] 顶栏搬出 #mp-scroll，直接挂在 body 上。body 自己不滚，所以 sticky / fixed 都多余，
+               relative 只是为了让 z-index 生效、稳稳压在滚动层上面。
+               它的实高由 JS 量出来，换算成玻璃和滚动层的上沿（--mp-glasstop）。 */
+            position: relative;
             z-index: 10;
             background: var(--panel);
             -webkit-backdrop-filter: var(--glass-blur);
@@ -111,7 +486,7 @@
             font-size: 12px;
             color: var(--muted);
             padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.92);   /* [MP-美化] 填充提白，跟奶油顶栏拉开对比 */
+            background: var(--sf-strong);   /* [MP-美化] 填充提白，跟奶油顶栏拉开对比 */
             border: 1px solid var(--line);           /* [MP-美化] 加一条柔和暖边框 */
             border-radius: 6px;
             flex: 1 1 0;
@@ -120,6 +495,17 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+
+        /* [MP] 阅读档开关：一颗钮，写着此刻是哪一档，点一下翻面。
+           上一版做成「原文｜净版」并排两颗，在手机顶栏里横着吃掉一大条，纯浪费。
+           净版档亮撞色，因为那确实是个非默认的当前状态；原文档是默认，素面待着别抢眼。 */
+        .readmode {
+            flex: 0 0 auto; font-size: 11px; font-weight: 600; line-height: 1;
+            padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px;
+            background: var(--sf-strong); color: var(--muted); box-shadow: none;
+            white-space: nowrap;
+        }
+        .readmode.clean { background: var(--sel); border-color: var(--sel); color: var(--on-sel); }
 
         /* [MP-美化] 状态点换成 Tabler 表情图标(MIT)：在线绿笑脸、离线红哭脸，描线染主题色 */
         .dot { width: 16px; height: 16px; display: inline-block; vertical-align: middle; background-repeat: no-repeat; background-position: center; background-size: contain; }
@@ -130,7 +516,7 @@
 
         /* [MP-美化] 按钮圆角/内距/过渡统一 */
         button {
-            background: rgba(255, 255, 255, 0.55);
+            background: var(--sf);
             color: var(--ink);
             border: 1px solid transparent;
             border-radius: var(--radius-sm);
@@ -143,28 +529,14 @@
 
         /* [MP] 只在真有指针悬停的设备上做 hover，手机触屏不再点完粘住高亮 */
         @media (hover: hover) {
-            button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.85); box-shadow: var(--shadow); }
+            button:hover:not(:disabled) { background: var(--sf-hover); box-shadow: var(--shadow); }
         }
         button:focus { outline: none; }        /* [MP] 去掉点完残留的焦点框 */
         button:active:not(:disabled) { transform: scale(0.96); } /* [MP] 按下瞬间回弹反馈 */
         button:disabled { opacity: .4; cursor: not-allowed; }
-        button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 500; box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.4); }
-        /* [MP-美化] 主按钮 hover 提亮 */
-        @media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--accent2); box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.5); } }
-
-        /* [MP-美化] 变化提示条改柔和暖红 */
-        .dirty-banner {
-            display: none;
-            background: rgba(208, 104, 72, 0.15);
-            color: var(--warn);
-            border-bottom: 1px solid rgba(208, 104, 72, 0.3);
-            padding: 8px 16px;
-            cursor: pointer;
-            font-size: 13px;
-            text-align: center;
-        }
-
-        .dirty-banner.show { display: block; }
+        button.primary { background: var(--btn); color: var(--on-accent); border-color: transparent; font-weight: 500; box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.4); }
+        /* [MP-美化] 主按钮 hover 换档：填充走 --btn-hi，光晕仍取 accent 的 rgb 保住主题辉光 */
+        @media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--btn-hi); box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.5); } }
 
         /* [MP-美化] 工具栏磨砂玻璃 */
         .toolbar {
@@ -186,7 +558,7 @@
         .kw-row input[type="text"] { width: auto; flex: 1 1 auto; }
         .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
         .toolbar input[type="text"] {
-            background: rgba(255, 255, 255, 0.55);
+            background: var(--sf);
             border: 1px solid var(--glass-line);
             color: var(--ink);
             border-radius: var(--radius-sm);
@@ -209,28 +581,39 @@
 
         .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
         .panel-title { font-weight: 600; color: var(--accent); }
+        /* [MP] 副API设置左上角关闭叉：裸图标无底，染当前主题辅色 --sel（自动跟皮肤走） */
+        .icon-btn.mp-x { margin-left: auto; background: transparent; border: none; box-shadow: none; color: var(--sel); font-size: 21px; line-height: 1; font-weight: 500; padding: 2px 8px; }
+        @media (hover: hover) { .icon-btn.mp-x:hover { background: transparent; box-shadow: none; color: var(--sel2); } }
 
         .settings { display: none; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
         .settings.show { display: block; }
         .srow { margin-bottom: 8px; }
         /* [MP] 折叠式提示词编辑（塞在总结/档案视图底部，平时收起） */
-        .prompt-fold { margin-top: 12px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, .14) 18%, rgba(0, 0, 0, .14) 82%, transparent) 1; padding-top: 8px; }
+        .prompt-fold { margin-top: 12px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; padding-top: 8px; }
         /* [MP-美化] 顶部变体：分隔线改到下方，收在操作区之上 */
-        .prompt-fold.top { margin-top: 4px; margin-bottom: 10px; padding-top: 0; padding-bottom: 10px; border-top: none; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, .14) 18%, rgba(0, 0, 0, .14) 82%, transparent) 1; }
+        .prompt-fold.top { margin-top: 4px; margin-bottom: 10px; padding-top: 0; padding-bottom: 10px; border-top: none; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; }
         .prompt-fold summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         .prompt-fold textarea { margin-top: 8px; }
         .srow.inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .srow label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
         .srow.inline label { display: flex; align-items: center; gap: 4px; margin-bottom: 0; }
-        .panel select { background: rgba(255, 255, 255, 0.55); border: 1px solid var(--glass-line); color: var(--ink); border-radius: var(--radius-sm); padding: 6px 11px; font-size: 14px; }
-        .api-status { margin-top: 10px; padding: 7px 12px; border-radius: var(--radius-sm); font-size: 15px; font-weight: 500; line-height: 1.4; word-break: break-all; background: rgba(255, 255, 255, 0.5); color: var(--muted); border: 1px solid var(--glass-line); }
-        .api-status.busy { background: rgba(224, 179, 82, 0.18); color: #8a6a1e; border-color: rgba(200, 145, 46, 0.35); }
-        .api-status.ok { background: rgba(76, 159, 111, 0.16); color: #2f7a4f; border-color: rgba(76, 159, 111, 0.35); }
-        .api-status.err { background: rgba(192, 96, 63, 0.16); color: #a84832; border-color: rgba(192, 96, 63, 0.35); }
+        .panel select { background: var(--sf); border: 1px solid var(--glass-line); color: var(--ink); border-radius: var(--radius-sm); padding: 6px 11px; font-size: 14px; }
+        .api-status { margin-top: 10px; padding: 7px 12px; border-radius: var(--radius-sm); font-size: 15px; font-weight: 500; line-height: 1.4; word-break: break-all; background: var(--sf); color: var(--muted); border: 1px solid var(--glass-line); }
+        /* [MP-美化] 三态改吃语义变量：忙=主题色、成、败，皮肤换了这三条自动跟着换，不再钉死一组暖黄绿红 */
+        .api-status.busy { background: rgba(var(--accent-rgb), 0.16); color: var(--accent); border-color: rgba(var(--accent-rgb), 0.35); }
+        .api-status.ok { background: rgba(var(--ok-rgb), 0.16); color: var(--ok); border-color: rgba(var(--ok-rgb), 0.35); }
+        .api-status.err { background: rgba(var(--warn-rgb), 0.16); color: var(--warn); border-color: rgba(var(--warn-rgb), 0.35); }
+        /* [MP] 副API屏：强调色全部翻成辅色(Claude赤陶橙)——标题/主按钮/下拉箭头/光标/测试中态。别的屏(档案/总结/外观)不动 */
+        #v-settings .panel-title { color: var(--sel); }
+        #v-settings button.primary { background: var(--sel); color: var(--on-sel); box-shadow: 0 4px 14px rgba(var(--sel-rgb), 0.4); }
+        @media (hover: hover) { #v-settings button.primary:hover:not(:disabled) { background: var(--sel2); box-shadow: 0 6px 18px rgba(var(--sel-rgb), 0.5); } }
+        #v-settings .panel select { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23d97757" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'); }
+        #v-settings input, #v-settings textarea, #v-settings select { caret-color: var(--sel); }
+        #v-settings .api-status.busy { background: rgba(var(--sel-rgb), 0.16); color: var(--sel); border-color: rgba(var(--sel-rgb), 0.35); }
 
         .panel input[type="text"], .panel input[type="password"], .panel input[type="number"], .panel textarea,
         .mp-fold-body input[type="text"], .mp-fold-body input[type="password"], .mp-fold-body input[type="number"], .mp-fold-body textarea {
-            background: rgba(255, 255, 255, 0.55);
+            background: var(--sf);
             border: 1px solid var(--glass-line);
             color: var(--ink);
             border-radius: var(--radius-sm);
@@ -246,7 +629,7 @@
         /* [MP-美化] 下拉框套主题：奶白底、蜜线描边、自定义蜜金小箭头，去掉系统黑框黑三角 */
         .panel select, .mp-fold-body select {
             -webkit-appearance: none; appearance: none;
-            background-color: rgba(255, 255, 255, 0.55);
+            background-color: var(--sf);
             background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23a67c1f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');
             background-repeat: no-repeat;
             background-position: right 11px center;
@@ -255,27 +638,48 @@
             border-radius: var(--radius-sm);
             padding: 6px 34px 6px 11px;
             font: inherit;
+            box-sizing: border-box; max-width: 100%;   /* [MP] 锁死宽度：长选项(生成方式)别把 select 撑破面板→整页横向溢出可拖动 */
         }
-        /* [MP-美化] 复选框染蜜金，别再是系统蓝方块 */
-        input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; vertical-align: -2px; }
+        /* [MP] 独占一行的下拉(接口模式/生成方式)填满行宽，跟输入框齐平；行内下拉(已存地址/拉取模型)不吃这条，保持随内容 */
+        .srow:not(.inline) > select { width: 100%; }
+        /* [MP-美化] 复选框染撞色，别再是系统蓝方块。勾上本身就是选中态，跟聚焦框同一套语言 */
+        input[type="checkbox"], input[type="radio"] { accent-color: var(--sel); width: 15px; height: 15px; vertical-align: -2px; }
         .summary-work textarea { margin: 8px 0; }
-        /* [MP-美化] 输入聚焦蜜金描边（复选框/单选框排除，别套那圈方形光晕） */
+        /* [MP-美化] 输入聚焦描边走撞色 --sel（复选框/单选框排除，别套那圈方形光晕）。
+           原来吃主色，可主色同时是标题/分隔线/静置描边的颜色，聚焦框混在里面认不出来；
+           撞色只在选中态出现，这圈框亮起来就一眼知道光标在哪 */
         input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:focus {
-            outline: none; border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+            outline: none; border-color: var(--sel);
+            box-shadow: 0 0 0 2px rgba(var(--sel-rgb), 0.15);
+            /* 聚焦的那一格换成不透明实底：半透明面会跟着底图一起变亮，
+               子夜蜜灯的赤铜框压上去只剩 2.5:1（要 3.0）。实底一垫，框和字都站得住。
+               只写 background-color，别写 background 简写，否则会把 select 的箭头图冲掉 */
+            background-color: var(--sf-solid);
         }
         /* [MP-美化] 总结/档案大文本框更舒展 */
         .summary-work textarea, #codex-text { min-height: 180px; line-height: 1.7; padding: 12px 14px; font-size: 14.5px; }
         /* [MP-美化] 楼号小格子：压矮缩短、圆角收小、数字居中，精致不笨重 */
-        .mp-fold-body input.num-mini { width: 46px; padding: 3px 6px; border-radius: 8px; font-size: 13px; text-align: center; background: rgba(255, 255, 255, 0.6); }
+        /* [MP-美化] 楼号框外线：1.5px 边框在非整数缩放的手机上会被渲染成一深一浅两条毛边，
+           改成 1px 实边 + box-shadow 外环（不占布局、不受 DPR 取整影响），线更实也更干净 */
+        /* [MP-美化] 这四个框（档案/总结的起始楼·结束楼）是全站唯一静置就带框的输入框，跟着聚焦框一起换撞色。
+           静置停在 0.75/0.25 透明度：八款实测 1.98~2.69:1，比旧的主色 0.6 那版强（默认款 1.60→2.63），
+           但都没够到 WCAG 非文字元素的 3.0。够不到的根因不在 alpha —— --sf 是半透明面，会跟着底图一起漂，
+           实测把 alpha 推到 1.0 子夜蜜灯也只有 2.51。真要够 3.0 得把这四个格子换成不透明实底，
+           那是外观改动，已单独跟 Miel 提过，没动。
+           再往上推 alpha 就变成实色边，会跟聚焦态撞。聚焦时那条规则给的是实色边 + 2px 外晕 + 不透明实底，
+           三处同时变，光标在哪一眼看得出，不会跟静置框糊成一样 */
+        .mp-fold-body input.num-mini { width: 46px; padding: 3px 6px; border-radius: 8px; font-size: 13px; text-align: center; background: var(--sf); border: 1px solid rgba(var(--sel-rgb), 0.75); box-shadow: 0 0 0 1px rgba(var(--sel-rgb), 0.25); }
         .num-mini::-webkit-outer-spin-button, .num-mini::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .num-mini { -moz-appearance: textfield; }
         /* [MP-美化] 更新档案/生成总结按钮往后挪一截，跟楼号框拉开距离 */
-        #btn-codex-gen, #btn-gen { margin-left: 14px; }
+        /* [MP-美化] 这俩按钮改吃撞色(--sel)，跟正文里主色系的「存档」等主按钮区分开 */
+        /* [MP-美化] hover 走 --sel2 提亮阶，不再用 filter:brightness——那玩意会把阴影和子元素一起洗白，跟主按钮的提亮机制也对不上 */
+        #btn-codex-gen, #btn-gen { margin-left: 14px; background: var(--sel); color: var(--on-sel); box-shadow: 0 4px 14px rgba(var(--sel-rgb), 0.4); }
+        @media (hover: hover) { #btn-codex-gen:hover:not(:disabled), #btn-gen:hover:not(:disabled) { background: var(--sel2); box-shadow: 0 6px 18px rgba(var(--sel-rgb), 0.5); } }
         /* [MP-美化] 可用态：奶白填满，同色边融进去，整颗实心 */
-        .mp-fold-body button:not(.primary):not(:disabled) { background: rgba(255, 255, 255, 0.92); border-color: rgba(255, 255, 255, 0.95); }
+        .mp-fold-body button:not(.primary):not(:disabled) { background: var(--sf-strong); border-color: var(--sf-strong); }
         /* [MP-美化] 禁用态：内里更淡+文字转灰(一眼看出没亮)，但照样描一圈奶白边预告亮起来的颜色 */
-        .mp-fold-body button:not(.primary):disabled { opacity: 1; background: rgba(255, 255, 255, 0.38); color: var(--muted); border-color: rgba(255, 255, 255, 0.95); }
+        .mp-fold-body button:not(.primary):disabled { opacity: 1; background: var(--sf-dim); color: var(--muted); border-color: var(--sf-strong); }
 
         /* [MP-美化] 总结历史卡片化 */
         .sum-item {
@@ -292,7 +696,7 @@
         .sum-item .applied { color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
         .sum-detail { margin-top: 6px; }
         .sum-detail > summary { cursor: pointer; color: var(--muted); list-style: revert; }
-        .sum-full { white-space: pre-wrap; margin-top: 6px; padding: 8px 12px; background: rgba(255, 255, 255, 0.55); border-radius: var(--radius-sm); color: var(--ink); }
+        .sum-full { white-space: pre-wrap; margin-top: 6px; padding: 8px 12px; background: var(--sf); border-radius: var(--radius-sm); color: var(--ink); }
 
         main { padding: 0 16px 80px; max-width: 1000px; margin: 10px auto 0; transition: margin-top .3s cubic-bezier(.22, 1, .36, 1); }
         body.mp-drawer-open main { margin-top: 10px; }   /* [MP-美化] 抽屉展开时首楼让开一点 */
@@ -300,19 +704,29 @@
         /* [MP-美化] 楼层卡片：磨砂玻璃 + 柔阴影替边框，展开态蜜金光晕，隐藏楼变淡 */
         .floor {
             /* [MP] 正文楼层不磨玻璃（省手机 GPU），改实一点的暖白卡 */
-            background: rgba(255, 253, 249, 0.78);
+            background: var(--read);
             border: 1px solid var(--glass-line);
             border-radius: var(--radius);
             box-shadow: var(--shadow-sm);
             margin-bottom: 7px;
-            overflow: hidden;
+            /* [MP] 这里原本是 overflow: hidden（给圆角裁子元素用）。撤掉是被迫的：
+               position:sticky 只要祖先的 overflow 不是 visible 就彻底失效，楼层头就粘不住顶。
+               圆角改由 .floor-head（上两角）和 .swipes（下两角）各自补。 */
             transition: box-shadow .18s, transform .1s;
         }
         .floor.open { box-shadow: var(--shadow), 0 0 0 1px rgba(var(--accent-rgb), 0.25); }
         .floor:has(.badge.hidden) { opacity: .5; }
         @media (hover: hover) { .floor:has(.badge.hidden):hover { opacity: .8; } }
 
+        /* [MP] 楼层头粘顶。AI 楼动辄几千字，展开后想收起要一路往回滑，纯纯折磨。
+           粘住之后正文再长，头也一直挂在顶栏底下，随手一点就收起。
+           top 的参照物是 #mp-scroll。那一层现在从玻璃上沿起算（顶栏已经搬出滚动层了），
+           所以这里写 0 就是「贴着玻璃上沿粘住」，不用再去减顶栏那截高度。 */
         .floor-head {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            border-radius: inherit;   /* 跟卡片同圆角。写死直角的话，.floor 不再裁剪，四个角会探出圆角露出来 */
             padding: 10px 14px;
             display: flex;
             align-items: center;
@@ -321,17 +735,25 @@
             user-select: none;
             transition: background .1s;
         }
+        /* [MP] 只有展开态才给头铺底。--read 是半透明(0.80)，折叠态铺底会跟卡片自己的底叠成两层，
+           整张卡明显发白，四角还会露出头探出圆角的那一点。展开态必须铺——粘住时底下有正文划过。 */
+        .floor.open > .floor-head {
+            background: var(--read);
+            box-shadow: 0 1px 0 rgba(var(--accent-rgb), 0.22);   /* 下沿线，跟正文分开 */
+        }
 
         @media (hover: hover) { .floor-head:hover { background: var(--panel2); } }
         .badge { font-size: 12px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
-        .badge.user { background: #e08a90; color: #fff; }   /* [MP-美化] H：淡红粉（樱花偏红） */
-        .badge.ai { background: #5f8fa8; color: #fff; }      /* [MP-美化] A：雾蓝 */
+        /* [MP-美化] H/A 身份色随皮肤走；字色不再钉死白，按底色亮度取 --on-h/--on-a，暗色皮肤自动转深字保对比 */
+        .badge.user { background: var(--h); color: var(--on-h); }
+        .badge.ai { background: var(--a); color: var(--on-a); }
         .badge.hidden { background: var(--panel3); color: var(--muted); }
         .floor-meta { font-size: 12px; color: var(--muted); }
         .floor-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
         /* [MP-美化] 楼层正文：JS 测高 max-height 顺滑展开收起，长篇不截断 */
-        .swipes { overflow: hidden; max-height: 0; contain: layout paint; transition: max-height .3s cubic-bezier(.22, 1, .36, 1); }
+        /* [MP] 下两角的圆角挪到这里补——.floor 的 overflow:hidden 为了粘顶被撤了 */
+        .swipes { overflow: hidden; max-height: 0; contain: layout paint; border-radius: 0 0 var(--radius) var(--radius); transition: max-height .3s cubic-bezier(.22, 1, .36, 1); }
         .swipes-inner { padding: 0 12px 10px; }
 
         .swipe {
@@ -339,6 +761,36 @@
             border-image: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), .5) 18%, rgba(var(--accent-rgb), .5) 82%, transparent) 1;
             padding: 10px 0;
         }
+
+        /* [MP] ===== 多版本改成一次只出一版 =====
+           以前 N 个版本上下堆成一长条，版本一多整楼长到没边。现在只显示当前这一版，
+           左右滑 / 点箭头切换；未显示的那几版连 markdown 都不解析，切到谁才现渲染谁，顺带省开销。 */
+        .swipe-nav { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; padding-top: 10px; }
+        .swipe-nav .sn-arrow {
+            flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; line-height: 1; border-radius: 999px;
+        }
+        .swipe-nav .sn-arrow:disabled { opacity: .28; }
+        .sn-count { font-size: 12px; color: var(--accent); font-weight: 600; flex: 0 0 auto; }
+        .sn-tags { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; }
+        .sn-spring { flex: 1 1 auto; min-width: 0; }
+        /* [MP] 换版时给一下淡入，不然内容瞬变像闪屏 */
+        .swipe-deck > .swipe { display: none; border: 0; padding: 0; }
+        .swipe-deck > .swipe.cur { display: block; animation: mp-swipe-in .18s ease; }
+        @keyframes mp-swipe-in { from { opacity: .35; } to { opacity: 1; } }
+
+        /* [MP] 正文底部的收起条：滑到底自然就撞上它，不用再往回翻 */
+        .floor-collapse {
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            margin-top: 12px; padding: 9px; cursor: pointer; user-select: none;
+            border-radius: var(--radius-sm);
+            background: var(--fill-1); color: var(--muted);
+            font-size: 12.5px; letter-spacing: .04em;
+            transition: background .12s, color .12s;
+        }
+        @media (hover: hover) { .floor-collapse:hover { background: var(--sf-strong); color: var(--ink); } }
+        .floor-collapse .fc-caret { font-size: 10px; line-height: 1; }
 
         .swipe-bar {
             display: flex;
@@ -349,20 +801,21 @@
 
         .path-label { font-size: 12px; color: var(--accent); font-weight: 600; }
         .chosen-tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; }
-        .saved-tag { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; }
-        /* [MP-美化] 正文里的「存档」按钮：做成和「更新档案」一样的实心主色按钮 */
-        .swipe-bar button { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 500; box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.4); }
-        @media (hover: hover) { .swipe-bar button:hover:not(:disabled) { background: var(--accent2); box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45); } }
+        /* [MP] 翻到非采用版本时的提醒：素面无框，只说明「你在偷看，酒馆没变」，不该抢眼 */
+        .peek-tag { font-size: 11px; color: var(--muted); padding: 1px 2px; }
+        /* [MP-美化] 历史存档对话里的「删除这条存档」按钮：实心主色 */
+        .swipe-bar button { background: var(--btn); color: var(--on-accent); border-color: transparent; font-weight: 500; box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.4); }
+        @media (hover: hover) { .swipe-bar button:hover:not(:disabled) { background: var(--btn-hi); box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45); } }
 
         /* [MP-美化] 正文衬线体、行距宽；阅读面做实（近白暖底）保清晰，玻璃留给外壳 */
         .swipe-body {
-            background: rgba(255, 253, 249, 0.9);
+            background: var(--read-body);
             border: 1px solid var(--glass-line);
             border-radius: var(--radius-sm);
             padding: 16px 18px;
             white-space: normal;
             word-break: break-word;
-            color: #3d382f;
+            color: var(--read-ink);
             font: 15.5px/1.6 "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
             letter-spacing: .02em;
         }
@@ -372,22 +825,25 @@
         .swipe-body p:last-child { margin-bottom: 0; }
         .swipe-body:last-child { margin-bottom: 0; }
         /* [MP-美化] 代码块/行内代码：强制折行，别让长行飞出容器 */
-        .swipe-body pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; margin: 0 0 .8em; padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(120, 90, 30, 0.06); font: 13px/1.55 ui-monospace, Menlo, Consolas, "PingFang SC", monospace; }
-        .swipe-body code { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; background: rgba(120, 90, 30, 0.08); padding: 1px 5px; border-radius: 4px; font: .9em/1.5 ui-monospace, Menlo, Consolas, "PingFang SC", monospace; }
+        .swipe-body pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; margin: 0 0 .8em; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--fill-1); font: 13px/1.55 ui-monospace, Menlo, Consolas, "PingFang SC", monospace; }
+        .swipe-body code { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; background: var(--fill-1); padding: 1px 5px; border-radius: 4px; font: .9em/1.5 ui-monospace, Menlo, Consolas, "PingFang SC", monospace; }
         .swipe-body pre code { background: none; padding: 0; font-size: inherit; }
 
-        .empty { color: var(--muted); text-align: center; padding: 40px; }
+        /* [MP-美化] 空态字是整页唯一裸压在背景上的文字。底图透过率拉高后它会被亮图吃掉，
+           给它自己一块玻璃面托底；嵌在侧栏/表格里的那两处本来就有底，撤掉不重复叠 */
+        .empty { color: var(--muted); text-align: center; padding: 40px; background: var(--panel); border-radius: var(--radius); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 
-        /* [MP-美化] toast：蜜金渐变横幅＋白色爱心＋白字，提到顶栏同高，从上方滑落，金色辉光抢眼 */
+        /* [MP-美化] toast：辅色实底横幅＋爱心＋on-sel 字，提到顶栏同高，从上方滑落，撞色辉光抢眼 */
         #toast {
             position: fixed;
             top: 8px;
             left: 50%;
             transform: translateX(-50%) translateY(-14px);
             display: block;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-            color: var(--on-accent);
-            border: 1px solid rgba(255, 255, 255, 0.38);
+            /* [MP-美化] toast 改辅色实底填充：各主题 sel + on-sel 都过 AA（4.78~6.49），不用渐变省得亮端掉档 */
+            background: var(--sel);
+            color: var(--on-sel);
+            border: 1px solid rgba(255, 255, 255, 0.38);   /* [MP-美化] toast 永远压在主色渐变上，这圈高光边不跟皮肤翻面 */
             padding: 11px 42px;
             border-radius: 14px;
             opacity: 0;
@@ -401,13 +857,16 @@
             text-align: center;
             word-break: break-word;
             width: max-content;
-            box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.45), var(--shadow-lg);
+            box-shadow: 0 10px 30px rgba(var(--sel-rgb), 0.45), var(--shadow-lg);
             max-width: min(440px, 90vw);
         }
         #toast::before {
             content: ""; position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
             width: 16px; height: 15px;
-            background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'><path d='M12 20.3 4.6 12.9C2.6 10.9 2.6 7.7 4.6 5.7C6.6 3.7 9.8 3.7 11.8 5.7L12 5.9 12.2 5.7C14.2 3.7 17.4 3.7 19.4 5.7C21.4 7.7 21.4 10.9 19.4 12.9Z'/></svg>") center / contain no-repeat;
+            /* [MP-美化] 爱心从「白色贴图」改成遮罩取 currentColor：暗色皮肤主色偏亮时字转深，心也跟着转深，不再糊成一团白 */
+            background-color: currentColor;
+            -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M12 20.3 4.6 12.9C2.6 10.9 2.6 7.7 4.6 5.7C6.6 3.7 9.8 3.7 11.8 5.7L12 5.9 12.2 5.7C14.2 3.7 17.4 3.7 19.4 5.7C21.4 7.7 21.4 10.9 19.4 12.9Z'/></svg>") center / contain no-repeat;
+            mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M12 20.3 4.6 12.9C2.6 10.9 2.6 7.7 4.6 5.7C6.6 3.7 9.8 3.7 11.8 5.7L12 5.9 12.2 5.7C14.2 3.7 17.4 3.7 19.4 5.7C21.4 7.7 21.4 10.9 19.4 12.9Z'/></svg>") center / contain no-repeat;
             filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.16));
         }
 
@@ -418,7 +877,7 @@
         #debugwrap {
             display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 200;
             max-height: 44vh; flex-direction: column;
-            background: rgba(255, 253, 248, 0.85);
+            background: var(--panel-hi);
             -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
             border-top: 2px solid var(--accent); box-shadow: var(--shadow-lg);
         }
@@ -432,33 +891,16 @@
         @media (hover: hover) { #debug-close:hover { color: var(--ink); } }
         #debuglog {
             margin: 0; padding: 8px 12px; overflow: auto; flex: 1;
-            color: #4a5540; font: 12px/1.5 ui-monospace, Consolas, monospace;
+            color: var(--muted); font: 12px/1.5 ui-monospace, Consolas, monospace;
             white-space: pre-wrap; word-break: break-word;
         }
         #debuglog .err { color: var(--warn); }
         @media (min-width: 900px) { #debugwrap { left: 240px; } }
 
-        /* [MP] 存档清单 */
-        .prose-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
-        .prose-legend .pl::before { content: '●'; margin-right: 3px; }
-        .pl.exact::before, .pi.exact { color: #6fcf7f; }
-        .pl.moved::before, .pi.moved { color: #e6b04d; }
-        .pl.edited::before, .pi.edited { color: #6aa6ff; }
-        .pl.orphan::before, .pi.orphan { color: #ff6a6a; }
-        .prose-row { border: 1px solid var(--glass-line); border-radius: var(--radius-sm); padding: 7px 12px; margin-bottom: 8px; background: rgba(255, 255, 255, 0.4); }
-        .prose-row .pr-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .prose-row .pi { font-weight: 600; }
-        .prose-row .pr-prev { color: var(--muted); margin-top: 4px; word-break: break-word; }
-        .prose-row .pr-full { white-space: pre-wrap; word-break: break-word; margin-top: 6px; padding: 8px 12px; background: rgba(255, 255, 255, 0.55); border-radius: var(--radius-sm); }
-        .prose-row .spacer { flex: 1; }
-        /* [MP] 存档总览行 */
-        .arc-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 6px 12px; border: 1px solid var(--glass-line); border-radius: var(--radius-sm); margin-bottom: 6px; background: rgba(255, 255, 255, 0.4); }
-        .arc-row.cur { border-color: var(--ok); background: rgba(95, 184, 122, 0.12); }
-        .arc-row .arc-name { font-weight: 600; word-break: break-all; }
-        .arc-row .arc-bits { flex: 1; text-align: right; }
+        .pane-hint { color: var(--muted); font-size: 12.5px; line-height: 1.6; padding: 6px 2px; }
         /* [MP] 存档总览·角色卡分组（角色名/聊天文件名 的斜杠前段归堆） */
         .char-card { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
-        .char-card.cur { border-color: var(--accent); }
+        .char-card.cur { border-color: var(--sel); }   /* [MP-美化] 选中态=副撞色 */
         .char-head { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; background: var(--panel2); }
         @media (hover: hover) { .char-head:hover { background: var(--panel3); } }
         .char-head .cc-caret { color: var(--muted); transition: transform .15s; font-size: 11px; }
@@ -482,7 +924,7 @@
         .inject-marker .im-body { padding: 2px 14px 12px; }
         .inject-marker .im-where { color: var(--ink); font-size: 12px; margin-bottom: 4px; }
         .inject-marker .im-sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-        .inject-marker .im-full { white-space: pre-wrap; word-break: break-word; padding: 8px 12px; background: rgba(255, 255, 255, 0.55); border-radius: var(--radius-sm); max-height: 240px; overflow: auto; font-size: 13px; }
+        .inject-marker .im-full { white-space: pre-wrap; word-break: break-word; padding: 8px 12px; background: var(--sf); border-radius: var(--radius-sm); max-height: 240px; overflow: auto; font-size: 13px; }
         /* [MP] 注入落点：长按整条卡片头即可拖动；拖动用浮层幽灵跟手，细虚线指示落点 */
         .inject-marker > .im-head { touch-action: none; -webkit-user-select: none; user-select: none; }
         .inject-ghost { position: fixed; z-index: 60; pointer-events: none; color: #e6a010; filter: drop-shadow(0 8px 14px rgba(230, 160, 16, 0.5)); }
@@ -503,13 +945,13 @@
         }
         #sidebar.open { transform: translateX(0); }
         /* [MP-美化] 侧栏底变浅后，把这里的浅灰小字统一调深一档（只在侧栏内改 --muted，不动全站） */
-        #sidebar { --muted: #514a3c; }
-        #overlay { position: fixed; inset: 0; background: rgba(60, 45, 15, 0.18); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 20; display: none; }
+        #sidebar { --muted: var(--muted-side); }
+        #overlay { position: fixed; inset: 0; background: rgba(var(--shadow-rgb), 0.28); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 20; display: none; }
         #overlay.show { display: block; }
         .nav-title { font-weight: 600; color: var(--accent); font-size: 18px; padding: 2px 8px 10px; }
         /* [MP-美化] 导航项蜜金左竖线标当前页 */
         .nav-item { text-align: left; width: 100%; background: transparent; border: none; box-shadow: none; border-left: 3px solid transparent; padding: 7px 12px 7px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink); font-size: 15px; transition: background .12s, border-color .12s; }
-        .nav-item.active { background: var(--panel2); border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .nav-item.active { background: var(--panel2); border-left-color: var(--sel); color: var(--sel); font-weight: 600; }   /* [MP-美化] 选中态=副撞色 */
         @media (hover: hover) { .nav-item:hover:not(:disabled) { background: var(--panel2); } }
         /* [MP-美化] 分隔线加回：整条从侧栏左到右，压在落款行之上 */
         .nav-sep { display: block; height: 1px; margin: 0 -12px; background: var(--accent2); opacity: .5; transform: scaleY(.6); }
@@ -519,8 +961,8 @@
         /* [MP-美化] 底栏字标重排：齿轮与品牌共一条中线，齿轮回归裸图标、品牌成深金横排字标 */
         /* [MP-美化] 齿轮＋版本整行大胆下沉，贴近侧栏底边 */
         .nav-foot { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px 3px; margin-top: 0; }
-        .nav-foot .nav-item.nav-gear { flex: 0 0 auto; width: auto; height: auto; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0 6px; font-size: 22px; line-height: 1; color: var(--accent2); border: none; background: transparent; box-shadow: none; transition: color .15s, transform .12s; }
-        @media (hover: hover) { .nav-foot .nav-item.nav-gear:hover { color: var(--accent); } }
+        .nav-foot .nav-item.nav-gear { flex: 0 0 auto; width: auto; height: auto; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0 6px; font-size: 22px; line-height: 1; color: var(--accent); border: none; background: transparent; box-shadow: none; transition: color .15s, transform .12s; }   /* [MP] 齿轮改挂 accent 深蜜金，原 accent2 太亮在白底看不清 */
+        @media (hover: hover) { .nav-foot .nav-item.nav-gear:hover { color: var(--sel); } }   /* [MP] 悬停跳撞色，给个反馈 */
         .nav-foot .nav-item.nav-gear:active { transform: scale(.9); }
         /* [MP-美化] 品牌落款：蜂 logo + 名字同一横排，版本淡字缀在名字之下 */
         /* [MP-美化] 底栏字标：名字占上行右对齐，蜂标＋版本裹成下行紧贴一起 */
@@ -529,88 +971,141 @@
         .nav-brand .brand-logo { height: 14px; opacity: .8; color: var(--accent2); flex: 0 0 auto; }
         .nb-name { font-family: Georgia, "Noto Serif", "Songti SC", "Times New Roman", serif; font-style: italic; font-size: 16.5px; font-weight: 600; letter-spacing: .3px; line-height: 1; color: var(--accent2); opacity: .95; white-space: nowrap; }
         /* [MP-美化] 版本号：下行、蜂标之后，紧贴 v 前，缩小紧凑 */
-        .nav-ver { font-family: ui-monospace, "SF Mono", "Cascadia Code", "DejaVu Sans Mono", Menlo, monospace; font-size: 9px; font-weight: 600; letter-spacing: .3px; line-height: 1; color: var(--accent2); opacity: .78; white-space: nowrap; }
+        .nav-ver { font-family: ui-monospace, "SF Mono", "Cascadia Code", "DejaVu Sans Mono", Menlo, monospace; font-size: 9px; font-weight: 600; letter-spacing: .3px; line-height: 1; color: var(--accent); opacity: .95; white-space: nowrap; }   /* [MP] 版本号改挂 accent 深蜜金＋透明度提到 .95，原 accent2 .78 在白底隐身 */
         .nav-ver .vp { opacity: .8; font-weight: 500; margin-right: .5px; }
         .nav-item.sub { padding-left: 14px; font-size: 14px; color: var(--muted); }
         .rf-ico { font-size: 18px; line-height: 1; vertical-align: -2px; }   /* [MP-美化] 刷新符号单独放大 */
-        .nav-item.sub.active { color: var(--accent); border-left-color: var(--accent); }
+        .nav-item.sub.active { color: var(--sel); border-left-color: var(--sel); }
         /* [MP-美化] 工具列抽屉：一张干净下拉卡片，行内高光式菜单 */
-        .tools-group { position: relative; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-height: 0; opacity: 0; overflow: hidden; transform: translateY(8px); padding: 5px 5px 11px; border: none; border-radius: 12px; background: var(--panel); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: 0 6px 20px rgba(60, 45, 15, .12); transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, transform .3s cubic-bezier(.22, 1, .36, 1); }
-        .tools-group.show { opacity: 1; transform: translateY(0); margin-bottom: -9px; box-shadow: 0 6px 20px rgba(60, 45, 15, .1), inset 0 -12px 11px -10px rgba(60, 45, 15, .12); }
+        .tools-group { position: relative; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-height: 0; opacity: 0; overflow: hidden; transform: translateY(8px); padding: 5px 5px 11px; border: none; border-radius: 12px; background: var(--panel); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: 0 6px 20px rgba(var(--shadow-rgb), .12); transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, transform .3s cubic-bezier(.22, 1, .36, 1); }
+        .tools-group.show { opacity: 1; transform: translateY(0); margin-bottom: -9px; box-shadow: 0 6px 20px rgba(var(--shadow-rgb), .1), inset 0 -12px 11px -10px rgba(var(--shadow-rgb), .12); }
         /* [MP-美化] 菜单项：扁平行＋图标灰调＋圆角高光，不再是胶囊 */
         #tools-group .nav-item { position: relative; display: flex; align-items: center; gap: 11px; padding: 9px 11px; border: none; border-radius: 8px; background: transparent; box-shadow: none; color: var(--ink); transition: background .13s ease; }
         #tools-group .nav-item .ti { flex: 0 0 18px; text-align: center; font-size: 15px; line-height: 1; color: var(--muted); opacity: .9; }
         #tools-group .nav-item .tl { font-size: 14px; letter-spacing: .2px; }
         /* [MP-美化] 分组细线：带 grp-sep 的项之上留一条 */
         #tools-group .grp-sep { margin-top: 5px; }
-        #tools-group .grp-sep::before { content: ""; position: absolute; left: -5px; right: -5px; top: -3px; height: 1px; background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .09) 22%, rgba(0, 0, 0, .09) 78%, transparent); }
+        #tools-group .grp-sep::before { content: ""; position: absolute; left: -5px; right: -5px; top: -3px; height: 1px; background: linear-gradient(90deg, transparent, var(--fill-2) 22%, var(--fill-2) 78%, transparent); }
         #tools-group .nav-item:active { background: rgba(var(--accent-rgb), .1); }
-        #tools-group .nav-item.active { background: rgba(var(--accent-rgb), .12); color: var(--accent); }
-        #tools-group .nav-item.active .ti { color: var(--accent); opacity: 1; }
+        #tools-group .nav-item.active { background: rgba(var(--sel-rgb), .12); color: var(--sel); }
+        #tools-group .nav-item.active .ti { color: var(--sel); opacity: 1; }
         @media (hover: hover) { #tools-group .nav-item:hover { background: rgba(var(--accent-rgb), .08); } }
         .icon-btn { font-size: 16px; line-height: 1; padding: 4px 9px; }
         /* [MP] 顶栏图标只留字形，不占块：去底色/阴影/边框 */
         header > button { background: transparent; box-shadow: none; border: none; color: var(--muted); padding: 5px 7px; border-radius: 50%; }
-        @media (hover: hover) { header > button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.6); box-shadow: none; color: var(--accent); } }
+        @media (hover: hover) { header > button:hover:not(:disabled) { background: var(--sf-hover); box-shadow: none; color: var(--accent); } }
         header > button:active:not(:disabled) { transform: scale(.9); }
 
         /* [MP-美化] 外观预设选择弹窗（只选预设皮肤，不做自定义） */
-        #skin-modal { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(60, 45, 15, 0.22); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+        #skin-modal { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(var(--shadow-rgb), 0.34); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
         #skin-modal.show { display: flex; }
-        .skin-dialog { width: 100%; max-width: 380px; max-height: 80vh; overflow: auto; background: rgba(255, 253, 248, 0.85); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8); border: 1px solid var(--glass-line); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 18px 20px; }
+        .skin-dialog { width: 100%; max-width: 380px; max-height: 80vh; overflow: auto; background: var(--panel-hi); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8); border: 1px solid var(--glass-line); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 18px 20px; }
         .skin-dialog-head { display: flex; align-items: center; margin-bottom: 14px; }
         .skin-dialog-head .t { font-weight: 600; color: var(--accent); font-size: 16px; flex: 1; }
         .skin-close { background: transparent; border: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 8px; cursor: pointer; }
-        .skin-list { display: flex; flex-direction: column; gap: 10px; }
-        .skin-item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.5); cursor: pointer; transition: box-shadow .15s, border-color .15s; }
-        .skin-item.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2); }
-        .skin-swatch { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
-        .skin-name { font-size: 14px; color: var(--ink); font-weight: 600; }
-        .skin-check { margin-left: auto; color: var(--accent); font-weight: 700; opacity: 0; }
+        .skin-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }   /* [MP] 外观列表改两列，省纵向空间 */
+        .skin-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; min-width: 0; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: var(--sf); cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+        .skin-item.sel { border-color: var(--sel); box-shadow: 0 0 0 2px rgba(var(--sel-rgb), 0.2); }   /* [MP-美化] 选中态=副撞色，外晕是同色半透明 */
+        .skin-swatch { width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px var(--fill-2); }
+        .skin-name { font-size: 14px; color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* [MP] 两列窄格防换行，超长省略 */
+        /* [MP-美化] 暗色皮肤：色块外镶一圈深环 + 名字后缀「夜」小标，不点开也知道选下去会整片翻黑 */
+        .skin-swatch.dk { box-shadow: inset 0 0 0 1px var(--fill-2), 0 0 0 2px rgba(20, 18, 14, .55); }
+        .skin-tag { margin-left: 5px; flex: 0 0 auto; font-size: 10.5px; font-weight: 600; line-height: 1; padding: 2.5px 5px; border-radius: 999px; background: rgba(20, 18, 14, .72); color: #f2e9d8; letter-spacing: .5px; }   /* [MP] 两列收紧：不被挤压 */
+        .skin-check { margin-left: auto; color: var(--sel); font-weight: 700; opacity: 0; }
         .skin-item.sel .skin-check { opacity: 1; }
 
         /* [MP-美化] 外观里的额外选项：分节标题 + 毛玻璃开关 + 背景图导入 */
         .skin-sec { margin-top: 18px; }
         .skin-sec-t { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .3px; margin: 0 2px 8px; }
-        .opt-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.5); }
+        .opt-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: var(--sf); }
         .opt-row + .opt-row { margin-top: 10px; }
         .opt-label { font-size: 14px; color: var(--ink); font-weight: 600; flex: 1; }
         .opt-sub { display: block; font-size: 11.5px; color: var(--muted); font-weight: 400; margin-top: 2px; line-height: 1.4; }
         /* 拨动开关 */
         .mp-switch { position: relative; flex: 0 0 auto; width: 44px; height: 26px; }
         .mp-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-        .mp-switch .track { position: absolute; inset: 0; border-radius: 999px; background: rgba(120, 100, 60, 0.28); transition: background .18s; }
-        .mp-switch .thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .18s; }
+        .mp-switch .track { position: absolute; inset: 0; border-radius: 999px; background: var(--fill-3); transition: background .18s; }
+        .mp-switch .thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--sf-solid); box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .18s; }
         .mp-switch input:checked ~ .track { background: var(--accent); }
         .mp-switch input:checked ~ .thumb { transform: translateX(18px); }
+        /* [MP-美化] 滑杆行：标题和读数一行，杆子单独一行铺满，手机上好按 */
+        .opt-row.col { display: block; }
+        .opt-head { display: flex; align-items: flex-start; gap: 12px; }
+        .opt-val { flex: 0 0 auto; font-size: 14px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+        .opt-row.off { opacity: .45; }
+        .opt-row.off .mp-range { pointer-events: none; }
+        /* 滑杆本体：轨道用中性填充，滑块用主题色（撞色只留给选中态，这里不算选中态） */
+        .mp-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 4px; margin: 14px 0 4px; padding: 0; border: none; border-radius: 999px; background: var(--fill-3); outline: none; }
+        .mp-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); border: 2px solid var(--sf-solid); box-shadow: 0 2px 7px rgba(var(--accent-rgb), .45); cursor: pointer; }
+        .mp-range::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); border: 2px solid var(--sf-solid); box-shadow: 0 2px 7px rgba(var(--accent-rgb), .45); cursor: pointer; }
+        .mp-range::-moz-range-track { height: 4px; border-radius: 999px; background: var(--fill-3); }
         /* 背景库下方「当前：xx」状态行 */
         .opt-bg-state { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
         .opt-bg-state b { color: var(--accent); font-weight: 600; }
         /* [MP-美化] 背景库：参考酒馆的背景网格，只管全局背景。缩略图九宫格，选中打勾，自定义可删，末位加号导入 */
         .bg-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-        .bg-cell { position: relative; aspect-ratio: 3 / 2; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background-size: cover; background-position: center; cursor: pointer; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.05); transition: box-shadow .15s; }
-        .bg-cell.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .45); }
+        .bg-cell { position: relative; aspect-ratio: 3 / 2; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background-size: cover; background-position: center; cursor: pointer; overflow: hidden; box-shadow: inset 0 0 0 1px var(--fill-2); transition: box-shadow .15s; }
+        .bg-cell.sel { border-color: var(--sel); box-shadow: 0 0 0 2px rgba(var(--sel-rgb), .45); }   /* [MP-美化] 选中态=副撞色，外晕是同色半透明 */
         .bg-cell .bg-tag { position: absolute; left: 5px; bottom: 4px; font-size: 10.5px; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.55); pointer-events: none; }
-        .bg-cell .bg-check { position: absolute; top: 4px; left: 5px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: none; align-items: center; justify-content: center; line-height: 1; }
+        .bg-cell .bg-check { position: absolute; top: 4px; left: 5px; width: 18px; height: 18px; border-radius: 50%; background: var(--sel); color: var(--on-sel); font-size: 11px; font-weight: 700; display: none; align-items: center; justify-content: center; line-height: 1; }
         .bg-cell.sel .bg-check { display: flex; }
         .bg-cell .bg-del { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(30,20,10,.55); color: #fff; font-size: 12px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
         .bg-add { display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 2; border-radius: var(--radius-sm); border: 1.5px dashed rgba(var(--accent-rgb), .5); background: rgba(var(--accent-rgb), .06); color: var(--accent); font-size: 26px; font-weight: 300; cursor: pointer; }
         .bg-add:active { background: rgba(var(--accent-rgb), .14); }
 
         /* [MP] 改名弹窗。目前用不透明实底（.rn-dialog）；玻璃化与整体外观留到美化阶段统一处理 */
-        #rename-modal { position: fixed; inset: 0; z-index: 41; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(45, 33, 12, 0.42); }
+        #rename-modal { position: fixed; inset: 0; z-index: 41; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(var(--shadow-rgb), 0.52); }
         #rename-modal.show { display: flex; }
-        .rn-dialog { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: #fffdf8 !important; }
+        .rn-dialog { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: var(--sf-solid) !important; }
         .rn-old { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; word-break: break-all; }
         .rn-old b { color: var(--ink); font-weight: 600; }
-        .rn-input { width: 100%; box-sizing: border-box; padding: 7px 12px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.6); color: var(--ink); font-size: 14px; }
-        .rn-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2); }
+        .rn-input { width: 100%; box-sizing: border-box; padding: 7px 12px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); background: var(--sf); color: var(--ink); font-size: 14px; }
+        .rn-input:focus { outline: none; border-color: var(--sel); box-shadow: 0 0 0 2px rgba(var(--sel-rgb), 0.2); }   /* [MP-美化] 聚焦框走撞色，跟全局输入框一致 */
         .rn-tip { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin: 10px 0 16px; }
         .rn-actions { display: flex; gap: 10px; justify-content: flex-end; }
         .rn-btn { padding: 6px 16px; border-radius: var(--radius-sm); border: 1px solid var(--glass-line); font-size: 13px; cursor: pointer; }
         .rn-btn.ghost { background: transparent; color: var(--muted); }
-        .rn-btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+        .rn-btn.primary { background: var(--btn); color: var(--on-accent); border-color: transparent; font-weight: 600; }
         .rn-btn:disabled { opacity: .5; cursor: default; }
+
+        /* [MP] 长按小菜单：竖排整行大钮，手指按得准。走改名弹窗同一套外壳 */
+        #lp-modal { position: fixed; inset: 0; z-index: 41; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(var(--shadow-rgb), 0.52); }
+        #lp-modal.show { display: flex; }
+        .lp-acts { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .lp-acts button {
+            width: 100%; text-align: left; padding: 10px 14px; font-size: 13.5px;
+            border-radius: var(--radius-sm); border: 1px solid var(--glass-line);
+            background: var(--sf); color: var(--ink); box-shadow: none;
+        }
+        .lp-acts button .lp-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 400; }
+        .lp-acts button.danger { color: #b4453a; }
+        /* [MP] 提示词框：默认锁着只能看，右上角一枚铅笔。点铅笔才解锁，铅笔立刻换成勾和叉：
+           勾＝存下，叉＝把这次的改动全丢掉退回原样。
+           以前是改完就自动存，一点后悔的余地都没有：手机上手指一蹭就把提示词毁了，
+           而且毁完你连原来写的是什么都不知道，只能重打一遍。 */
+        /* 图标绝对定位吸在标题行右端，一个像素的正文空间都不占 */
+        .prompt-fold { position: relative; }
+        .prompt-fold[open] > summary { padding-right: 62px; }
+        .pf-tools { position: absolute; top: -3px; right: 0; display: flex; gap: 6px; }
+        .pf-tools button {
+            width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; border: 1px solid var(--glass-line);
+            background: var(--sf-strong); box-shadow: none;
+        }
+        .pf-tools button svg { width: 14px; height: 14px; display: block; }
+        .pf-tools button.pen { color: var(--sel); border-color: rgba(var(--sel-rgb), .5); }
+        .pf-tools button.ok { color: var(--accent); border-color: rgba(var(--accent-rgb), .55); }
+        .pf-tools button.no { color: var(--sel); border-color: rgba(var(--sel-rgb), .5); }
+        .pf-wrap textarea[readonly] { opacity: .82; }
+
+        /* [MP] 书架标记：右上角斜插一枚回形针。绝对定位，对话名那一行一个像素都不让它占。
+           描线走主色：这是「在架上」的状态，撞色留给选中态。 */
+        .ct-clip {
+            position: absolute; top: -5px; right: 3px; z-index: 2;
+            width: 15px; height: 15px; pointer-events: none;
+            color: var(--accent); transform: rotate(34deg);
+            filter: drop-shadow(0 1px 1.5px rgba(var(--shadow-rgb), .22));
+        }
 
         /* [MP-美化] 细滚动条 */
         /* [MP-美化] webkit 滚动条隐藏（新引擎有效；老 WebView 不认这个伪元素，那条原生浮层滚动条藏不掉，属机器限制） */
@@ -623,7 +1118,7 @@
 
         /* [MP] ========== 侧边栏角色树 ========== */
         .char-tree { overflow-y: auto; }
-        .char-tree .empty { padding: 12px 14px; font-size: 13px; }
+        .char-tree .empty { padding: 12px 14px; font-size: 13px; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
         .ct-card { margin: 0 0 6px; }
         /* [MP-美化] 角色卡=磨砂玻璃浮钮：半透明白底 + 磨砂 + 柔阴影 + 玻璃高光边 */
         .ct-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 7px 13px; cursor: pointer; border: none; border-radius: var(--radius-sm); background: rgba(var(--accent-rgb), 0.17); box-shadow: none; transition: background .15s, transform .12s; }
@@ -638,7 +1133,7 @@
         .ct-card.open > .ct-body { max-height: 1500px; opacity: 1; padding: 4px 0 2px 10px; }
         /* [MP-美化] 对话行=树叶子：素净透明，去掉全局 button 的圆角/阴影/白底 */
         .ct-chat { position: relative; display: block; width: 100%; text-align: left; background: transparent; border: none; border-radius: 10px; box-shadow: none; color: var(--ink); padding: 6px 10px; font-size: 12.5px; line-height: 1.4; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; transition: background .15s, box-shadow .15s, color .15s; }
-        @media (hover: hover) { .ct-chat:hover:not(.sel) { background: rgba(255, 255, 255, .4); } }
+        @media (hover: hover) { .ct-chat:hover:not(.sel) { background: var(--sf-soft); } }
         /* [MP-美化] 名字一行截断加省略号；在线只留一颗小绿点靠右做状态灯 */
         .ct-cline { display: flex; align-items: center; gap: 6px; }
         .ct-cname { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -646,7 +1141,7 @@
         .ct-chat .ct-live { display: none; }
         .ct-chat .ct-cbits { display: block; color: var(--muted); font-size: 10.5px; margin-top: 1px; font-weight: 400; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         /* [MP-美化] 唯一焦点：选中项化成一张磨砂玻璃卡，柔光 + 金字，不再靠竖杆缎带 */
-        .ct-chat.sel { color: var(--ink); font-weight: 600; border: none; border-radius: 12px; background: rgba(var(--accent-rgb), 0.16); box-shadow: none; }
+        .ct-chat.sel { color: var(--ink); font-weight: 600; border: none; border-radius: 12px; background: rgba(var(--sel-rgb), 0.16); box-shadow: none; }   /* [MP-美化] 选中态=副撞色 */
         .ct-chat.sel .ct-cbits { color: var(--muted); opacity: .9; }
         /* [MP-美化] 在线＝右上角一枚绿色档案书签角标（复用全站档案图标造型），小巧不占名字行 */
         .ct-chat.online::after {
@@ -656,7 +1151,7 @@
             filter: drop-shadow(0 1px 1.5px rgba(50, 72, 42, .2));
         }
         /* [MP] 铅笔已删：在线对话长按即改名，列表回归干净单列 */
-        .ct-chat.online:active { background: rgba(var(--accent-rgb), .1); }
+        .ct-chat.online:active { background: rgba(var(--sel-rgb), .1); }
 
         /* [MP] ========== 屏幕切换（工作区 / 副API设置） ========== */
         .screen { display: none; }
@@ -680,12 +1175,12 @@
         .fold-tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 6px 6px; border: none; border-radius: var(--radius-sm); background: transparent; box-shadow: none; color: var(--muted); line-height: 1; cursor: pointer; transition: color .15s, background .15s, transform .1s; }
         .fold-tab > span { display: none; }   /* [MP-美化] 标签栏只留图标，不要小字注释 */
         .fold-tab svg { width: 22px; height: 22px; display: block; fill: currentColor; }
-        .fold-tab.active { color: var(--on-accent); background: var(--accent); box-shadow: 0 3px 10px rgba(var(--accent-rgb), 0.35); }
+        .fold-tab.active { color: var(--on-sel); background: var(--sel); box-shadow: 0 3px 10px rgba(var(--sel-rgb), 0.35); }   /* [MP-美化] 激活态=撞色实心 */
         .fold-tab:active { transform: scale(.9); }
         @media (hover: hover) { .fold-tab:hover:not(.active) { color: var(--accent); background: rgba(var(--accent-rgb), 0.12); } }
         /* [MP-美化] 面板别做成实白大块：压低不透明度，让底层柔光透上来，才像毛玻璃 */
         /* [MP-美化] 顶部抽屉：JS 测高 max-height 顺滑展开收起 */
-        .fold-pane { overflow: hidden; max-height: 0; opacity: 0; flex: 0 0 auto; min-height: 0; border: 0; border-radius: var(--radius); background: rgba(255, 253, 248, 0.5); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: none; margin-top: 0; transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, margin-top .3s cubic-bezier(.22, 1, .36, 1), box-shadow .28s ease; }
+        .fold-pane { overflow: hidden; max-height: 0; opacity: 0; flex: 0 0 auto; min-height: 0; border: 0; border-radius: var(--radius); background: var(--panel3); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: none; margin-top: 0; transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, margin-top .3s cubic-bezier(.22, 1, .36, 1), box-shadow .28s ease; }
         .fold-pane.open { opacity: 1; margin-top: 4px; box-shadow: var(--shadow), inset 0 0 0 1px var(--glass-line); }   /* [MP-美化] 边框改内阴影：收起时零高度不留残余 */
         /* [MP-美化] 收起时临时关毛玻璃，省掉每帧重算的卡顿 */
         .fold-pane.mp-noblur { -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -693,32 +1188,33 @@
         .mp-fold-body { padding: 10px 14px; }
         .pane-meta { margin: 0 0 6px; font-size: 12px; line-height: 1.4; }
         .pane-meta:empty { display: none; }
-        .codex-viz .empty { padding: 12px; font-size: 13px; }
+        .codex-viz .empty { padding: 12px; font-size: 13px; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
         /* [MP-美化] 面板顶上的标识：开哪个类一眼看清（标签栏没字，靠这个认） */
         .pane-title { position: relative; display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding-bottom: 7px; font-size: 15px; font-weight: 600; color: var(--accent); }
         /* [MP-美化] 卡内顶端分隔线：深金实线，满宽从左到右（其它分隔线才用灰渐变） */
         .pane-title::after { content: ""; position: absolute; left: -14px; right: -14px; bottom: 0; height: 1.5px; border-radius: 1px; background: var(--accent2); opacity: .48; }
         .pane-title svg { width: 18px; height: 18px; fill: currentColor; flex: 0 0 auto; }
         /* [MP-美化] 一览面板里每张表的小标题：图标+名字，段与段之间留气口 */
-        .viz-sec + .viz-sec { margin-top: 18px; padding-top: 16px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, .14) 18%, rgba(0, 0, 0, .14) 82%, transparent) 1; }
+        .viz-sec + .viz-sec { margin-top: 18px; padding-top: 16px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; }
         .viz-sec-h { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--accent); }
         .viz-sec-h svg { width: 17px; height: 17px; fill: currentColor; flex: 0 0 auto; }
-        .codex-viz h2 { font-size: 15px; color: var(--accent); margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, .14) 18%, rgba(0, 0, 0, .14) 82%, transparent) 1; }
+        .codex-viz h2 { font-size: 15px; color: var(--accent); margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; }
         .codex-viz h2:first-child { margin-top: 0; }
         .codex-viz table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; display: block; overflow-x: auto; }
         .codex-viz th, .codex-viz td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
         .codex-viz th { background: var(--panel2); color: var(--ink); font-weight: 600; white-space: nowrap; }
-        .codex-viz pre { white-space: pre-wrap; background: rgba(255, 255, 255, 0.5); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; }
+        .codex-viz pre { white-space: pre-wrap; background: var(--sf); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; }
 
         @media (min-width: 900px) {
             #sidebar { transform: none; }
             #overlay { display: none !important; }
             .menu-btn { display: none; }
-            body { padding-left: 240px; }
+            #mp-scroll { padding-left: 240px; }   /* [MP] 滚动层挪到 #mp-scroll 后，给侧栏让位的内边距也跟着挪 */
+            header { padding-left: 250px; }       /* [MP] 顶栏搬出滚动层后蹭不到那 240px 了，自己给侧栏让位（240 + 原本的 10） */
         }
     </style>
     <!-- [MP-美化] 提前套用已选外观预设，避免刷新闪回默认色 -->
-    <script>try { var s = localStorage.getItem('mp_skin'); if (s && s !== 'platinum') document.documentElement.setAttribute('data-theme', s); if (localStorage.getItem('mp_glass') === '0') document.documentElement.setAttribute('data-glass', 'off'); } catch (e) {}</script>
+    <script>try { var s = localStorage.getItem('mp_skin'); if (s && s !== 'platinum') document.documentElement.setAttribute('data-theme', s); if (localStorage.getItem('mp_glass') === '0') document.documentElement.setAttribute('data-glass', 'off'); var ga = localStorage.getItem('mp_glass_a'); if (ga !== null && ga !== '' && !isNaN(+ga)) document.documentElement.style.setProperty('--wash-a', String((100 - Math.min(100, Math.max(0, +ga))) / 100)); } catch (e) {}</script>
 </head>
 
 <body>
@@ -727,9 +1223,14 @@
     <!-- [MP] 输入法预热框：VIA 等安卓 WebView 冷启动时「文字输入法」没醒，导致全页文字框打不进字（数字框走数字键盘，冷启动就是醒的，不受影响）。
          这里放一个走数字键盘的隐形小框，你第一次真实触屏时 focus 它一下，把 WebView 的输入子系统捅醒，之后全页文字框都能正常打。 -->
     <input id="ime-warm" inputmode="numeric" type="text" tabindex="-1" aria-hidden="true" autocomplete="off" style="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;">
+    <!-- [MP] 顶栏。以前它是 sticky 挂在滚动层里的，现在搬出来当 body 的直接孩子：
+         滚动层的上沿要跟磨砂玻璃对齐（顶栏底下 6px 处），顶栏再待在里面就会被自己挡的那块裁掉。
+         搬出来之后它是 body 里唯一走正常流的元素，实高由 JS 量了写进 --mp-glasstop。 -->
     <header>
         <button id="btn-menu" class="menu-btn" title="菜单">☰</button>
         <span class="chatkey" id="chatkey">未定位</span>
+        <!-- [MP] 阅读档一颗钮：写着此刻在哪一档，点一下翻面。原文=酒馆里存的字；净版=跑完酒馆正则的快照 -->
+        <button class="readmode" id="readmode">原文</button>
         <span><span class="dot off" id="bridgedot"></span> <span id="bridgetext" class="floor-meta">桥离线</span></span>
         <input type="file" id="file-import" accept="application/json" style="display:none" />
     </header>
@@ -773,7 +1274,7 @@
             </div>
             <div class="skin-list" id="skin-list"></div>
 
-            <!-- [MP-美化] 毛玻璃开关 -->
+            <!-- [MP-美化] 毛玻璃开关 + 透明度滑杆（全皮肤共用一个浓度，用户自己拖） -->
             <div class="skin-sec">
                 <div class="skin-sec-t">质感</div>
                 <div class="opt-row">
@@ -782,6 +1283,13 @@
                         <input type="checkbox" id="opt-glass">
                         <span class="track"></span><span class="thumb"></span>
                     </label>
+                </div>
+                <div class="opt-row col" id="row-glass-a">
+                    <div class="opt-head">
+                        <span class="opt-label">磨砂透明度<span class="opt-sub">往右拖背景透得越多；所有外观共用这一档</span></span>
+                        <span class="opt-val" id="glass-a-val">70%</span>
+                    </div>
+                    <input type="range" class="mp-range" id="opt-glass-a" min="0" max="100" step="5" value="70">
                 </div>
             </div>
 
@@ -792,6 +1300,19 @@
                 <div class="opt-bg-state" id="bg-state">当前：<b>默认水彩</b></div>
             </div>
             <input type="file" id="bg-import" accept="image/*" style="display:none">
+        </div>
+    </div>
+
+    <!-- [MP] 侧边栏条目长按弹出的小菜单：改名 / 收进书架 / 移出书架。
+         沿用改名弹窗那套 skin-dialog 外壳，样式统一，也省一份新CSS。 -->
+    <div id="lp-modal">
+        <div class="skin-dialog rn-dialog">
+            <div class="skin-dialog-head">
+                <span class="t" id="lp-title">对话</span>
+                <button class="skin-close" id="lp-close" title="关闭">✕</button>
+            </div>
+            <div class="rn-old" id="lp-sub"></div>
+            <div class="lp-acts" id="lp-acts"></div>
         </div>
     </div>
 
@@ -812,8 +1333,13 @@
         </div>
     </div>
 
-    <div class="dirty-banner" id="dirty">聊天数据已变化，点击刷新快照</div>
-
+    <!-- [MP] 真正在滚的那一层。见样式表里 #mp-scroll 那段：
+         html 锁视口 → body 当裁刀 → 这一层比裁刀宽 20px，把原生滚动条挤出裁切线。
+         溢出全关在页面内部，视口一点都不溢出，于是整页再也拖不动。
+         这一层的四边跟磨砂玻璃那块矩形对齐，所以里面只放会滚的正文，
+         顶栏 / 侧栏 / 遮罩 / 弹窗 / toast / 调试条一律搬到外面去当 body 的孩子——
+         它们虽然是 fixed 认视口，但这层现在带 overflow，别赌老 WebView 不裁 fixed 子孙。 -->
+    <div id="mp-scroll">
     <!-- [MP] 工作区：抽屉(档案/总结/可视化) 悬在正文之上 -->
     <div id="workspace" class="screen active">
         <!-- 三个常驻折叠块：档案 / 总结 / 可视化 -->
@@ -824,7 +1350,7 @@
                 <div class="fold-group fg-fn">
                     <button class="fold-tab" data-pane="codex"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M6 3h11a1 1 0 0 1 1 1v17l-6.5-3.1L5 21V4a1 1 0 0 1 1-1ZM11.5 15C7.5 12.3 6.5 10.2 8.3 8.8C9.5 7.9 10.8 8.6 11.5 9.6C12.2 8.6 13.5 7.9 14.7 8.8C16.5 10.2 15.5 12.3 11.5 15Z"/></svg><span>档案</span></button>
                     <button class="fold-tab" data-pane="sum"><svg viewBox="0 0 24 24"><path d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h11v2H4v-2Z"/></svg><span>总结</span></button>
-                    <button class="fold-tab" id="tab-filter" data-pane="filter" title="只看AI楼 / 只看已存档 / 关键字检索"><svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8.2V21l-4-2v-6.8L3 4Z"/></svg><span>筛选</span></button>
+                    <button class="fold-tab" id="tab-filter" data-pane="filter" title="只看AI楼 / 关键字检索"><svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8.2V21l-4-2v-6.8L3 4Z"/></svg><span>筛选</span></button>
                 </div>
                 <!-- 分类键：人物 / 世界观 / 地点 / 时间线 / 线索，浅底一撮，由 renderViz 动态插 -->
                 <div class="fold-group fg-cat" id="fold-cats"></div>
@@ -838,8 +1364,9 @@
                     <div class="pane-title"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M6 3h11a1 1 0 0 1 1 1v17l-6.5-3.1L5 21V4a1 1 0 0 1 1-1ZM11.5 15C7.5 12.3 6.5 10.2 8.3 8.8C9.5 7.9 10.8 8.6 11.5 9.6C12.2 8.6 13.5 7.9 14.7 8.8C16.5 10.2 15.5 12.3 11.5 15Z"/></svg><span>档案</span></div>
                     <div class="pane-meta"><span class="floor-meta" id="codex-meta"></span></div>
                     <details class="prompt-fold top">
-                        <summary>档案更新提示词（系统·点开编辑，改完自动保存）</summary>
-                        <textarea id="s-codex-prompt" rows="6"></textarea>
+                        <summary>档案更新提示词（系统·点开查看，要改先点右上角铅笔）</summary>
+                        <div class="pf-tools" id="pf-tools-codex"></div>
+                        <div class="pf-wrap"><textarea id="s-codex-prompt" rows="6" readonly></textarea></div>
                     </details>
                     <div class="srow inline">
                         <label>起始楼 <input type="number" id="codex-start" min="0" class="num-mini" /></label>
@@ -873,8 +1400,9 @@
                     <div class="pane-title"><svg viewBox="0 0 24 24"><path d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h11v2H4v-2Z"/></svg><span>总结</span></div>
                     <div class="pane-meta"><span class="floor-meta" id="lastvol"></span></div>
                     <details class="prompt-fold top">
-                        <summary>总结提示词（系统·点开编辑，改完自动保存）</summary>
-                        <textarea id="s-prompt" rows="6"></textarea>
+                        <summary>总结提示词（系统·点开查看，要改先点右上角铅笔）</summary>
+                        <div class="pf-tools" id="pf-tools-sum"></div>
+                        <div class="pf-wrap"><textarea id="s-prompt" rows="6" readonly></textarea></div>
                     </details>
                     <div class="summary-work">
                         <div class="srow inline">
@@ -899,7 +1427,6 @@
                     <div class="pane-title"><svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8.2V21l-4-2v-6.8L3 4Z"/></svg><span>筛选检索</span><span id="stat" class="filter-stat"></span></div>
                     <div class="srow inline">
                         <label><input type="checkbox" id="f-ai" /> 只看AI楼</label>
-                        <label><input type="checkbox" id="f-saved" /> 只看已存档</label>
                     </div>
                     <label class="kw-row">检索 <input type="text" id="f-kw" placeholder="关键字…" /></label>
                     <div class="floor-meta" id="filter-hint" style="display:none;margin-top:8px">筛选检索仅对酒馆里正在打开的在线对话有效。</div>
@@ -917,7 +1444,7 @@
 
     <!-- [MP] 副API设置屏（工具里进入） -->
     <section class="screen panel" id="v-settings">
-        <div class="panel-head"><button id="settings-back" class="icon-btn" title="返回">← 返回</button><span class="panel-title">副API设置</span></div>
+        <div class="panel-head"><span class="panel-title">副API设置</span><button id="settings-back" class="icon-btn mp-x" title="关闭">✕</button></div>
         <div id="settings-box">
             <div class="srow inline"><label>已存地址</label>
                 <select id="s-preset"></select>
@@ -949,6 +1476,7 @@
             <div id="api-status" class="api-status">状态：未测试</div>
         </div>
     </section>
+    </div><!-- /#mp-scroll -->
 
     <div id="toast"></div>
 
@@ -980,8 +1508,53 @@
         }
         window.addEventListener('error', e => dlog('JS错误: ' + (e.message || e), true));
         window.addEventListener('unhandledrejection', e => dlog('Promise错误: ' + (e.reason && e.reason.message || e.reason), true));
+        // [MP] 滚动体检。幽灵滚动条查了三四轮全靠猜几何，猜一次让 Miel 手机上试一次，纯属拿她当调试器。
+        // 手机没 F12，那就把控制台该看的东西直接摊到调试日志里：谁在滚、多宽、溢出多少、overflow 是什么。
+        // 点开「调试日志」自动跑一遍，念给我听就能定案。
+        function mpScrollProbe() {
+            const H = document.documentElement, B = document.body;
+            const box = (n, e) => `${n}  client ${e.clientWidth}x${e.clientHeight}  scroll ${e.scrollWidth}x${e.scrollHeight}  offsetW ${e.offsetWidth}`;
+            dlog('──── 滚动体检 ────');
+            dlog(`视口 ${window.innerWidth}x${window.innerHeight}`);
+            dlog(box('html', H));
+            dlog(box('body', B));
+            const SC = document.getElementById('mp-scroll');
+            if (SC) {
+                dlog(box('#mp-scroll', SC));
+                dlog(`#mp-scroll 溢出：纵 ${SC.scrollHeight - SC.clientHeight}px ／ 横 ${SC.scrollWidth - SC.clientWidth}px   scrollLeft ${SC.scrollLeft}`);
+            } else {
+                dlog('#mp-scroll 不存在（滚动层没建起来）');
+            }
+            dlog('scrollingElement = ' + (document.scrollingElement === B ? 'body' : (document.scrollingElement === H ? 'html' : '(无)')));
+            dlog(`纵向溢出：html ${H.scrollHeight - H.clientHeight}px ／ body ${B.scrollHeight - B.clientHeight}px`);
+            const hit = [];
+            const all = document.querySelectorAll('*');
+            for (let i = 0; i < all.length; i++) {
+                const e = all[i];
+                if (e === B || e === H) continue;
+                const dy = e.scrollHeight - e.clientHeight, dx = e.scrollWidth - e.clientWidth;
+                if (dy < 4 && dx < 4) continue;
+                const cs = getComputedStyle(e);
+                const oy = cs.overflowY, ox = cs.overflowX;
+                const canY = dy >= 4 && (oy === 'auto' || oy === 'scroll');
+                const canX = dx >= 4 && (ox === 'auto' || ox === 'scroll');
+                if (!canY && !canX) continue;
+                let cls = '';
+                if (e.className && typeof e.className === 'string') {
+                    cls = '.' + e.className.trim().split(/\s+/).slice(0, 3).join('.');
+                }
+                const sel = e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + cls;
+                hit.push(`${sel}  ${e.clientWidth}x${e.clientHeight}  溢出 ${dx}x${dy}  overflow ${ox}/${oy}`);
+            }
+            dlog(`此刻真能滚的内部容器：${hit.length} 个`);
+            for (let i = 0; i < hit.length && i < 12; i++) dlog('  · ' + hit[i]);
+            if (hit.length > 12) dlog(`  …另有 ${hit.length - 12} 个未列`);
+            dlog('──── 体检完 ────');
+        }
         document.getElementById('btn-debug').onclick = () => {
-            document.getElementById('debugwrap').classList.toggle('show');
+            const w = document.getElementById('debugwrap');
+            w.classList.toggle('show');
+            if (w.classList.contains('show')) mpScrollProbe();   // [MP] 每次打开都重新体检，反映当下状态
         };
         document.getElementById('debug-close').onclick = () => document.getElementById('debugwrap').classList.remove('show');
 
@@ -998,7 +1571,23 @@
         let bridgeTimer = null;
         let renameOpen = false;   // [MP] 改名弹窗开着时为真：冻结后台心跳与桥消息处理，别在打字时抢焦点/改DOM把键吞了
         let currentChatKey = null;
-        let snapshot = null; // {chatKey, messages[], count}
+        let snapshot = null; // {chatKey, messages[], count, regexReady} —— 在线对话的实时快照
+        // [MP] 书架上某一本的离线拷贝。你选中的是存档书时，正文区读的是它，桥睡着也照读。
+        //   跟 snapshot 分开放：桥的后台广播随时会刷新 snapshot，不能把你正翻着的那本书顶掉。
+        let bookSnapshot = null;
+        function viewSnap() { return selectedIsLive() ? snapshot : (bookSnapshot || snapshot); }
+        // [MP] 阅读档两挡：
+        //   'raw'  原文 = 酒馆存档里原样的字，有几个 swipe 就有几个，箭头能翻。
+        //   'clean'净版 = 一张快照：酒馆此刻显示的那本书（酒馆关了就是关掉前显示的那本）跑完正则的样子。
+        //          一楼一版，没有 swipe 可切。它干净、最好读，顺带你也就看见了副API收到的到底是哪串字。
+        //   净版由桥算（桥里 import 了酒馆自己的 engine.js，走 isPrompt 档），跟着快照一起送过来。
+        //   蜜脾这边不自己实现正则：那套要连 substituteParams、macro、named group 一起重写，
+        //   稍有出入就等于对着你撒谎说「副API收到的就是这个」。宁可桥没醒时不给净版。
+        let readMode = (function () { try { return localStorage.getItem('mp_readmode') === 'clean' ? 'clean' : 'raw'; } catch (e) { return 'raw'; } })();
+        // [MP] 取一条消息在当前阅读档下该显示的正文。净版缺席（桥没醒/这条压根没被正则动过）就回落原文。
+        function mesOf(m) {
+            return (readMode === 'clean' && m && m.mesClean != null) ? m.mesClean : (m && m.mes != null ? m.mes : '');
+        }
         let selectedChatKey = null; // [MP] 侧边栏当前选中的对话（可能是历史存档，未必是在线的那个）
         let currentCharAvatar = null; // [MP] 当前在线对话所属角色卡的 png 文件名，桥随快照带来，直连服务器改名要用它当 avatar_url
         // [MP] 改过名的 旧chatKey→新chatKey：桥的滞后广播还带着旧名时统一映射到新名。持久化到 localStorage，
@@ -1145,7 +1734,12 @@
                         sendDate: m.send_date != null ? m.send_date : null
                     };
                 });
-                await applySnapshotPayload({ chatKey: currentChatKey, messages: messages, count: messages.length, avatar: avatar }, opts);
+                // [MP] regexReady 明写 false：这条路是蜜脾自己直连服务器读盘，绕开了酒馆，
+                // 正则一条都没跑过。宁可把「净版」钮按灰，也不能拿原文冒充净版骗你。
+                await applySnapshotPayload({ chatKey: currentChatKey, messages: messages, count: messages.length, avatar: avatar, regexReady: false }, opts);
+                // [MP] 读盘只拿得到原文。桥要是醒着，顺手再问它讨一份带净版的补上，
+                //   否则一进页面就是直连读的这份，净版钮从头灰到尾，你点了没反应。
+                upgradeToCleanSnapshot();
                 return true;
             } finally {
                 pullingSnapshot = false;
@@ -1165,13 +1759,28 @@
             for (let i = 0; i < arr.length; i++) total += arr[i].mes ? arr[i].mes.length : 0;
             const last = arr.length ? arr[arr.length - 1] : null;
             const sig = (payload.chatKey || '') + '|' + (payload.count || 0) + '|' + total + '|' + (last ? last.swipeId : '');
-            if (!opts.follow && snapshot && sig === lastSnapSig && payload.chatKey === currentChatKey) { snapshot = payload; return; }
+            // [MP] 直连读盘那条路绕开酒馆，拿回来的快照没有净版。内容跟手上这份一字不差的时候，
+            //   别让它把「带净版的那份」挤掉，否则后台每自动重读一次，净版钮就灭一次。
+            if (!payload.regexReady && snapshot && snapshot.regexReady
+                && sig === lastSnapSig && payload.chatKey === currentChatKey) { syncReadMode(); return; }
+            if (!opts.follow && snapshot && sig === lastSnapSig && payload.chatKey === currentChatKey) {
+                snapshot = payload;
+                // [MP] 正文没变但净版可能刚补上（先直连读了一份，桥随后把带净版的送来）。
+                //   以前这里直接 return，钮就永远亮不了，净版一辈子切不过去。
+                syncReadMode();
+                return;
+            }
             lastSnapSig = sig;
             snapshot = payload;
             if (payload.avatar) { currentCharAvatar = payload.avatar; rememberLiveAvatar(); }
             if (snapshot.chatKey && renameAliases[snapshot.chatKey]) snapshot.chatKey = renameAliases[snapshot.chatKey];
             setChatKey(payload.chatKey);
-            hideDirty();
+            syncReadMode();   // [MP] 新快照带没带净版，决定「净版」钮亮不亮
+            // [MP] 这本在书架上就顺手把最新的抄进本地。指纹没变的话 mirrorBook 自己会跳过，不会每次心跳都写盘。
+            //   净版没算出来的时候不抄：那会把一本没有净版的半成品盖到已经抄好的上面。
+            if (payload.regexReady && isBook(payload.chatKey)) {
+                try { await mirrorBook(payload.chatKey, payload.messages); } catch (e) { dlog('书架同步失败: ' + e, true); }
+            }
             const followLive = opts.follow || selectedIsLive() || !selectedChatKey;
             if (followLive) {
                 selectedChatKey = currentChatKey;
@@ -1250,7 +1859,6 @@
                 case 'chat-changed':
                     markBridge(true);
                     heartbeat();
-                    hideDirty();
                     // [MP] 酒馆换了对话：桥切换前已把 mp_live_chatkey 写进共享 localStorage，
                     // 统一走 syncToLive：跟随会弹顶端提示，关对话('')也会清空工作区
                     syncToLive({ follow: true }).catch(() => post('get-snapshot'));
@@ -1258,17 +1866,29 @@
                 case 'chat-dirty':
                     markBridge(true);
                     heartbeat();
-                    showDirty();
-                    // [MP] 桥报「当前对话有新楼层」：自己直连去拉最新正文，不用你手点刷新。
-                    //   follow 缺省——你正看着在线对话就顺带刷正文，正在翻别的存档就只静默更新数据+树，不打扰
-                    pullSnapshotDirect({}).catch(() => { });
+                    // [MP] 桥报「酒馆这边动过了」：静默重拉，不弹任何提示。
+                    //   原来这里会挂一条「聊天数据已变化，点击刷新快照」的横幅，那是纯噪音：
+                    //   你在酒馆改正文的时候蜜脾这个标签页压在后台，横幅是闪给没人看的屏幕看的；
+                    //   等你切回来，重拉早跑完了，你只剩一条要你多点一下的命令。所以横幅整个拆掉。
+                    // [MP] 优先问桥要：只有桥那边才有酒馆正则引擎，直连读盘拿回来的快照是没有净版的。
+                    //   桥刚发过这条消息，说明它此刻醒着，问它是安全的；1.5秒不回再退回直连读盘。
+                    requestSnapshotQuiet();
+                    break;
+                case 'regex-ready':
+                    // [MP] 桥把酒馆正则引擎载起来了，重要一份快照把净版补上
+                    markBridge(true);
+                    heartbeat();
+                    requestSnapshotQuiet();
                     break;
                 case 'snapshot':
                     markBridge(true);
                     heartbeat();
                     if (msg.payload) {
                         mpMark('★4 兜底快照回来了（大聊天深拷贝＋跨iframe序列化耗时看这段）');
-                        await applySnapshotPayload(msg.payload, { follow: true }); // [MP] 桥兜底快照，走共用应用路径
+                        // [MP] quiet=桥自己报的变化，你可能正翻着别的存档，别硬把界面拽到在线对话去
+                        const quiet = quietSnapPending;
+                        if (quiet) { clearTimeout(quietSnapTimer); quietSnapTimer = null; quietSnapPending = false; }
+                        await applySnapshotPayload(msg.payload, { follow: !quiet });
                         mpMark('★5 快照render完成');
                     }
                     break;
@@ -1346,8 +1966,6 @@
             bridgeTimer = setTimeout(() => { markBridge(false); dlog('桥4秒无消息，判离线并重新ping', true); post('ping'); }, 4000);
         }
 
-        function showDirty() { document.getElementById('dirty').classList.add('show'); }
-        function hideDirty() { document.getElementById('dirty').classList.remove('show'); }
 
         // [MP] 手动刷新/点提示：直连服务器重读当前对话（不再依赖桥应答）；直读失败再退回问桥要
         async function manualRefresh() {
@@ -1359,8 +1977,74 @@
                 post('get-snapshot');
             }
         }
-        document.getElementById('dirty').onclick = manualRefresh;
+        // [MP] 静默要一份桥快照。桥的快照带净版（正则跑在酒馆那边），直连读盘的没有，所以能问桥就问桥。
+        //   桥要是冻着不回，1.5 秒后退回直连读盘：正文照样是最新的，只是没净版。
+        let quietSnapPending = false, quietSnapTimer = null;
+        function requestSnapshotQuiet() {
+            quietSnapPending = true;
+            if (quietSnapTimer) clearTimeout(quietSnapTimer);
+            quietSnapTimer = setTimeout(() => {
+                quietSnapTimer = null;
+                if (!quietSnapPending) return;
+                quietSnapPending = false;
+                dlog('桥1.5秒没回快照，退回直连读盘（这份没有净版）');
+                pullSnapshotDirect({}).catch(() => { });
+            }, 1500);
+            post('get-snapshot');
+        }
+
         document.getElementById('btn-refresh').onclick = manualRefresh;
+
+        // [MP] 手上这份快照没有净版、而桥又醒着时，静静再问桥要一份把净版补上。
+        //   这里故意不挂「1.5秒没回就直连读盘」的兜底：那条兜底自己又会调这个函数，两边能绕成死圈。
+        //   10 秒冷却，桥要是装死也就白问一次。
+        let lastCleanUpgrade = 0;
+        function upgradeToCleanSnapshot() {
+            if (!bridgeOnline) return;
+            if (snapshot && snapshot.regexReady) return;
+            const now = Date.now();
+            if (now - lastCleanUpgrade < 10000) return;
+            lastCleanUpgrade = now;
+            quietSnapPending = true;   // 静默：别把界面从你正看的存档硬拽到在线对话去
+            post('get-snapshot');
+        }
+
+        // [MP] 阅读档开关。净版是不是真算得出来，看快照里的 regexReady：
+        //   桥没醒（安卓把酒馆那个标签冻了）→ 快照是蜜脾直连读盘来的，没跑过正则，这时候净版是假的，
+        //   与其给你看一份骗人的「净版」，不如把钮按灰，说清楚为什么。
+        // [MP] 净版此刻能不能算出来。算不出来的原因要能说人话，因为你在手机上没有控制台，
+        //   一颗按不动的灰钮等于什么都没告诉你。
+        function cleanBlockedReason() {
+            const S = viewSnap();
+            if (!S) return '还没拿到快照，等一下或者点右上角刷新';
+            if (S.regexReady) return null;
+            if (S.offline) return '这本书是老版本存进来的，那会儿还没存净版。到酒馆打开它，蜜脾会自动把净版补齐。';
+            if (!bridgeOnline) return '酒馆那个标签睡了。正则跑在酒馆那边，它不醒就算不出净版。去酒馆晃一下再切回来。';
+            return '桥在线，但没接上酒馆的正则引擎。去酒馆那个标签硬刷新一次（下拉刷新／Ctrl+F5），让它重新加载蜜脾的桥。';
+        }
+        function syncReadMode() {
+            const b = document.getElementById('readmode');
+            const S = viewSnap();
+            if (!S || !S.regexReady) {
+                if (readMode === 'clean') readMode = 'raw';   // 算不出来就老实退回原文，别留个空档
+            }
+            b.textContent = readMode === 'clean' ? '净版' : '原文';
+            b.classList.toggle('clean', readMode === 'clean');
+            b.title = readMode === 'clean' ? '点一下回到原文' : '点一下切到净版';
+        }
+        function setReadMode(mode) {
+            if (readMode === mode) return;
+            if (mode === 'clean') {
+                const why = cleanBlockedReason();
+                if (why) { toast(why); return; }   // [MP] 说清为什么切不过去，别默默不动
+            }
+            readMode = mode;
+            try { localStorage.setItem('mp_readmode', mode); } catch (e) { }
+            syncReadMode();
+            if (viewSnap()) render().catch(() => { });   // [MP] 在线对话和书架上的书都要跟着换档
+        }
+        document.getElementById('readmode').onclick = () => setReadMode(readMode === 'clean' ? 'raw' : 'clean');
+        syncReadMode();   // [MP] 开页时先按「还没快照」处理，等桥把带净版的快照送上来再说
 
         // [MP] 切回蜜脾（页面重新可见）就自动对齐酒馆当前对话——你在酒馆切了对话/写完，翻回蜜脾自动跟过去，不用手刷。
         //   走 syncToLive 直连问服务器「现在开着哪个」，绕开被冻结的后台桥；对话变了就切、没变就静默重读不打扰。
@@ -1416,6 +2100,99 @@
         async function addProse(rec) { return await idbReq(tx('prose', 'readwrite').add(rec)); }
         async function delProse(id) { return await idbReq(tx('prose', 'readwrite').delete(id)); }
         async function getAll(store) { return db ? await idbReq(tx(store, 'readonly').getAll()) : []; }
+
+        // [MP] ============ 书架 ============
+        // 侧边栏是蜜脾自己的书架，上面只站着「收进来的书」加上酒馆此刻开着的那本。
+        // 收进来 = 蜜脾把整本抄一份到本地：每楼的原文（含全部 swipe）＋净版快照。
+        // 抄一份的意义：酒馆那个标签睡死了、或者你人在离线，整本照读照导出；
+        // 总结和档案是挂在 chatKey 上的，正文不在本地，它们就成了没有正文对应的孤儿。
+        let bookKeys = new Set();
+        async function loadBookKeys() {
+            try {
+                const row = await idbReq(tx('settings', 'readonly').get('books'));
+                bookKeys = new Set((row && Array.isArray(row.keys)) ? row.keys : []);
+            } catch (e) { bookKeys = new Set(); }
+        }
+        async function saveBookKeys() {
+            try { await idbReq(tx('settings', 'readwrite').put({ key: 'books', keys: Array.from(bookKeys) })); } catch (e) { }
+        }
+        function isBook(k) { return !!k && bookKeys.has(k); }
+
+        // [MP] 把整本抄进本地。一楼一条，覆盖式重写。
+        //   为什么不做增量：楼层会在酒馆里被插入、删除、隐藏，楼号整体位移，
+        //   逐楼对账的代价和出错概率都比整本重写高得多。三百楼一次事务，几十毫秒的事。
+        let lastMirrorSig = new Map();   // chatKey → 上次抄的指纹，没变就不重抄，省得每次心跳都写盘
+        async function mirrorBook(chatKey, messages) {
+            if (!db || !chatKey || !Array.isArray(messages) || !messages.length) return false;
+            let sig = messages.length + ':';
+            for (const m of messages) sig += (m.mes ? m.mes.length : 0) + ',' + m.swipeId + ',' + (m.mesClean ? m.mesClean.length : 0) + ';';
+            if (lastMirrorSig.get(chatKey) === sig) return false;
+            const now = Date.now();
+            // [MP] 先在只读事务里把旧条的 id 拿全，再开一个读写事务一口气删+写。
+            //   不在同一个事务里 await：IndexedDB 的事务只在事件回调那一瞬间是活的，
+            //   await 一下控制权就交出去了，回来时事务已经关了，报 TransactionInactiveError。
+            const oldRows = await proseForChat(chatKey);
+            const store = tx('prose', 'readwrite');
+            for (const r of oldRows) store.delete(r.id);   // 含更早版本蜜脾留下的按版本存的碎条
+            let last = null;
+            for (const m of messages) {
+                last = store.add({
+                    chatKey: chatKey, kind: 'mirror', floorIndex: m.floorIndex,
+                    name: m.name || '', is_user: !!m.is_user, is_system: !!m.is_system,
+                    swipes: (m.swipes && m.swipes.length) ? m.swipes : [m.mes || ''],
+                    swipeId: Number.isInteger(m.swipeId) ? m.swipeId : 0,
+                    clean: m.mesClean != null ? m.mesClean : null,   // null=净版跟原文一个样，读的时候自己回落
+                    cleaned: true,   // [MP] 抄的时候净版是算过的。跟 clean===null 区分开：那只表示这楼洗完没变
+                    savedAt: now,
+                });
+            }
+            if (last) await idbReq(last);   // 等最后一条落地，调用方拿到的就是「真写完了」
+            lastMirrorSig.set(chatKey, sig);
+            return true;
+        }
+
+        // [MP] 从本地拼回一本书，喂给 render() 用。结构跟桥的实时快照对齐，正文区那套代码一份通吃。
+        async function loadBookSnapshot(chatKey) {
+            const rows = (await proseForChat(chatKey)).filter(r => r.kind === 'mirror');
+            if (!rows.length) return null;
+            rows.sort((a, b) => a.floorIndex - b.floorIndex);
+            return {
+                chatKey: chatKey, count: rows.length, offline: true,
+                // [MP] 抄进来的时候净版就一并抄了，所以离线也能切档。没有任何一楼带净版的
+                //   （老版本蜜脾存下的），就照实说算不出来，别拿原文冒充。
+                regexReady: rows.some(r => r.cleaned || r.clean != null),
+                messages: rows.map(r => ({
+                    floorIndex: r.floorIndex, name: r.name, is_user: !!r.is_user, is_system: !!r.is_system,
+                    mes: r.swipes[r.swipeId] != null ? r.swipes[r.swipeId] : (r.swipes[0] || ''),
+                    mesClean: r.clean, swipes: r.swipes, swipeId: r.swipeId, sendDate: r.savedAt,
+                })),
+            };
+        }
+
+        // [MP] 把某本收进书架。live=true 时顺手用手上的实时快照抄一份，不用等下一次心跳。
+        async function enrollBook(chatKey, opts) {
+            if (!chatKey) return;
+            const isNew = !bookKeys.has(chatKey);
+            if (isNew) { bookKeys.add(chatKey); await saveBookKeys(); }
+            if (snapshot && snapshot.chatKey === chatKey && snapshot.messages) {
+                await mirrorBook(chatKey, snapshot.messages);
+            }
+            if (!(opts && opts.silent)) toast(isNew ? '已收进书架，蜜脾开始跟着同步整本' : '已重新抄一份到书架');
+            await renderCharTree();
+        }
+
+        // [MP] 跑过总结、建过档案的对话，一律自动收进书架，不问。
+        //   理由：总结和档案是挂在这个对话上的，正文不在本地，哪天酒馆那边动了/没了，
+        //   它们就对不上号了。不管副API总结的是第几楼到第几楼，收的都是整本。
+        async function autoEnroll(chatKey, why) {
+            if (!chatKey || bookKeys.has(chatKey)) {
+                if (chatKey && snapshot && snapshot.chatKey === chatKey && bookKeys.has(chatKey))
+                    await mirrorBook(chatKey, snapshot.messages);
+                return;
+            }
+            await enrollBook(chatKey, { silent: true });
+            toast('这本有' + why + '了，已自动收进书架（整本原文+净版都抄了一份）');
+        }
 
         // [MP] ============ 设置 + 总结 ============
         const DEFAULT_SUMMARY_PROMPT =
@@ -1582,13 +2359,47 @@
             toast('已保存到地址：' + apiPresets[activeIdx].name);
         };
 
-        // [MP] 总结/档案提示词已挪到各自视图，改完即存（无需按钮）
-        document.getElementById('s-prompt').addEventListener('change', async (e) => {
-            await putSetting('summaryPrompt', e.target.value); toast('总结提示词已保存');
-        });
-        document.getElementById('s-codex-prompt').addEventListener('change', async (e) => {
-            await putSetting('codexPrompt', e.target.value); toast('档案提示词已保存');
-        });
+        // [MP] 提示词框的「铅笔→勾/叉」。默认锁着，点铅笔才能改，勾才落盘，叉退回原样。
+        //   以前是 change 事件里直接存，改错了没有任何退路，连原文都找不回来。
+        const PF_ICON = {
+            pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg>',
+            ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>',
+            no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg>',
+        };
+        function wirePromptEditor(taId, toolsId, settingKey, label) {
+            const ta = document.getElementById(taId);
+            const tools = document.getElementById(toolsId);
+            if (!ta || !tools) return;
+            let stash = null;   // 点铅笔那一刻框里的字，叉一按就拿它盖回去
+            const mk = (icon, cls, title, fn) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.innerHTML = icon; b.title = title;
+                if (cls) b.className = cls;
+                b.onclick = fn;
+                tools.appendChild(b);
+            };
+            const lock = () => {
+                ta.readOnly = true; tools.innerHTML = '';
+                mk(PF_ICON.pen, 'pen', '点一下才能改' + label, () => {
+                    stash = ta.value;
+                    ta.readOnly = false; tools.innerHTML = '';
+                    mk(PF_ICON.ok, 'ok', '保存这次修改', async () => {
+                        try { await putSetting(settingKey, ta.value); toast(label + '已保存'); }
+                        catch (e) { toast('保存失败：' + (e && e.message || e)); return; }
+                        stash = null; lock();
+                    });
+                    mk(PF_ICON.no, 'no', '放弃这次修改，退回原样', () => {
+                        if (stash != null && ta.value !== stash && !confirm('放弃这次修改？框里改的字会全部退回原样。')) return;
+                        if (stash != null) ta.value = stash;
+                        stash = null; lock();
+                    });
+                    ta.focus();
+                });
+            };
+            lock();
+        }
+        wirePromptEditor('s-prompt', 'pf-tools-sum', 'summaryPrompt', '总结提示词');
+        wirePromptEditor('s-codex-prompt', 'pf-tools-codex', 'codexPrompt', '档案提示词');
 
         // [MP] 选中拉取到的模型 → 回填model输入框
         document.getElementById('s-model-pick').onchange = (e) => {
@@ -1995,6 +2806,9 @@
                 summaryText: text, applied: !!applied,
                 createdAt: new Date().toISOString(),
             }));
+            // [MP] 跑出总结就自动收进书架：总结挂在这个 chatKey 上，正文不在本地，
+            //   哪天酒馆那边改了/没了，这卷总结就成了没有正文对应的孤儿。不管总结的是第几楼到第几楼，收的都是整本。
+            autoEnroll(key, '总结').catch(() => { });
             renderCharTree();   // [MP] 卷数变了刷新侧栏
             return { id, volume };
         }
@@ -2373,6 +3187,8 @@
                 prevDocText: keepPrev ? ((old && old.docText) || '') : ((old && old.prevDocText) || ''),
             };
             await idbReq(tx('codex', 'readwrite').put(rec));
+            // [MP] 建了档案也自动收进书架，理由跟总结一样：档案是从这本的正文里提炼的，正文得在本地留着
+            if (rec.docText.trim()) autoEnroll(key, '档案').catch(() => { });
             renderCharTree();   // [MP] 档案有无变了刷新侧栏
             return rec;
         }
@@ -2544,35 +3360,43 @@
 
         function textPrefix80(s) { return String(s || '').slice(0, 80); }
 
-        // 存档指纹匹配：优先 floorIndex+swipeIndex，其次 sendDate+textPrefix
-        function isArchived(saved, floorIndex, swipeIndex, sendDate, swipeText) {
-            const pfx = textPrefix80(swipeText);
-            return saved.some(r =>
-                (r.floorIndex === floorIndex && r.swipeIndex === swipeIndex) ||
-                (r.sendDate && sendDate && r.sendDate === sendDate && r.textPrefix === pfx)
-            );
-        }
-
         async function render() {
             const main = document.getElementById('main');
-            if (!snapshot || !snapshot.messages || !snapshot.messages.length) {
+            // [MP] 在线对话读实时快照，书架上的书读它自己那份离线拷贝。两者结构一样，下面一套代码通吃。
+            const SNAP = viewSnap();
+            if (!SNAP || !SNAP.messages || !SNAP.messages.length) {
                 main.innerHTML = '<div class="empty">当前聊天没有可显示的楼层</div>';
                 document.getElementById('stat').textContent = '';
                 return;
             }
-            const saved = await proseForChat(snapshot.chatKey);
             const fAI = document.getElementById('f-ai').checked;
-            const fSaved = document.getElementById('f-saved').checked;
             const kw = document.getElementById('f-kw').value.trim().toLowerCase();
+
+            // [MP] 重绘前先记书签。你在酒馆改前文的时候蜜脾在后台压着，重拉是悄悄发生的，
+            // 等你切回来第一眼就该还在你离开的地方，不能被甩回第一楼。
+            // 记两样：哪些楼是展开的；视口顶上卡着的是哪一楼、卡进去多少像素。
+            const _B = mpScroller();
+            const _btop = _B.getBoundingClientRect().top;
+            const _wasOpen = [];
+            document.querySelectorAll('#main .floor.open').forEach(f => _wasOpen.push(f.dataset.floor));
+            let _anchor = null, _anchorOff = 0;
+            for (const f of document.querySelectorAll('#main .floor')) {
+                const r = f.getBoundingClientRect();
+                if (r.bottom > _btop) { _anchor = f.dataset.floor; _anchorOff = r.top - _btop; break; }
+            }
 
             let shown = 0;
             const frag = document.createDocumentFragment();
 
-            for (const m of snapshot.messages) {
+            for (const m of SNAP.messages) {
                 if (fAI && m.is_user) continue;
-                const swipes = m.swipes && m.swipes.length ? m.swipes : [m.mes];
-                const floorSaved = swipes.some((t, si) => isArchived(saved, m.floorIndex, si, m.sendDate, t));
-                if (fSaved && !floorSaved) continue;
+                const rawSwipes = m.swipes && m.swipes.length ? m.swipes : [m.mes];
+                // [MP] 净版是一张快照：酒馆此刻显示的那本书（酒馆关了就是关掉前显示的那本）跑完正则。
+                //   所以净版档下一楼就一段字，没有版本可翻。你在原文档翻箭头偷看酒馆隐藏的 swipe，
+                //   影响不到净版分毫——那些版本从来没被送出去过，给它们编个「净版」就是撒谎。
+                // [MP] 检索也只搜你眼前这一档，否则净版里根本没这个词，却搜出一堆楼点开找不着。
+                const cleanMode = (readMode === 'clean');
+                const swipes = cleanMode ? [mesOf(m)] : rawSwipes;
                 if (kw) {
                     const hit = swipes.some(t => String(t).toLowerCase().includes(kw));
                     if (!hit) continue;
@@ -2587,11 +3411,11 @@
                 head.className = 'floor-head';
                 const roleBadge = m.is_user ? '<span class="badge user">H</span>' : '<span class="badge ai">A</span>';
                 const hiddenBadge = m.is_system ? '<span class="badge hidden">隐藏</span>' : '';
-                const verInfo = swipes.length > 1 ? `${swipes.length}版本` : '单版本';
+                const verInfo = cleanMode ? '净版' : (swipes.length > 1 ? `${swipes.length}版本` : '单版本');
                 head.innerHTML =
                     roleBadge + hiddenBadge +
                     `<span class="floor-meta">${m.floorIndex}楼 · ${esc(m.name)} · ${verInfo}</span>` +
-                    `<span class="floor-preview">${esc(textPrefix80(m.mes))}</span>`;
+                    `<span class="floor-preview">${esc(textPrefix80(mesOf(m)))}</span>`;
                 floor.appendChild(head);
 
                 const box = document.createElement('div');
@@ -2600,42 +3424,148 @@
 
                 // [MP] 懒渲染：折叠态不解析 markdown、不建 DOM；点开哪一楼才现场建那一楼，
                 // 避免打开面板时把全聊天几百个版本一次性 marked.parse 堆爆主线程→高延迟。
+                // [MP] 再进一步：建的时候也只渲染「当前这一版」，其余几版切到谁才渲染谁。
                 let built = false;
+                let cur = cleanMode ? 0 : m.swipeId;   // 此刻显示的是第几版；净版只有一版，恒为 0
+                let deck = null, snCount = null, snTags = null, snPrev = null, snNext = null;
+
+                // [MP] 版本条只报「你现在翻到第几版、哪一版是酒馆当前采用的」。
+                // 蜜脾对酒馆的 swipe 全程只读：翻版本一个字都不会写回去，
+                // 所以不存在「翻着翻着把上文换了、跟下文对不上」这回事。
+                const syncNav = () => {
+                    if (!built) return;
+                    if (cleanMode) {
+                        // [MP] 净版档没有版本这回事，条上只说清楚这段字是打哪来的
+                        snCount.textContent = `${m.floorIndex}楼 · 净版`;
+                        snTags.innerHTML = '<span class="peek-tag">酒馆显示的这版 · 跑完正则</span>';
+                        return;
+                    }
+                    const chosen = cur === m.swipeId;
+                    snCount.textContent = swipes.length > 1
+                        ? `${m.floorIndex}楼 · 版本 ${cur + 1}/${swipes.length}`
+                        : `${m.floorIndex}楼 · 单版本`;
+                    snTags.innerHTML = chosen
+                        ? '<span class="chosen-tag">当前采用</span>'
+                        : '<span class="peek-tag">仅查看 · 酒馆未采用</span>';
+                    if (snPrev) snPrev.disabled = cur <= 0;
+                    if (snNext) snNext.disabled = cur >= swipes.length - 1;
+                };
+
+                // 把第 si 版的正文补上（只补一次）
+                const renderOne = (si) => {
+                    const sw = deck.children[si];
+                    if (!sw || sw.__mpDone) return;
+                    sw.__mpDone = true;
+                    const r = renderMd(swipes[si]);
+                    const body = document.createElement('div');
+                    body.className = 'swipe-body' + (r.plain ? ' plain' : '');
+                    body.innerHTML = r.html;
+                    sw.appendChild(body);
+                };
+
+                const setSwipe = (si) => {
+                    if (!built || si === cur || si < 0 || si >= swipes.length) return;
+                    renderOne(si);
+                    deck.children[cur].classList.remove('cur');
+                    deck.children[si].classList.add('cur');
+                    cur = si;
+                    syncNav();
+                    // 换版后整楼高度变了。展开态的 max-height 已经放成 none，这里兜一下防老 WebView 不回流
+                    if (box.__mpOpen) { box.style.maxHeight = 'none'; void box.offsetHeight; }
+                };
+
                 const buildSwipes = () => {
                     if (built) return; built = true;
                     const inner = document.createElement('div'); inner.className = 'swipes-inner';   // [MP-美化] 抽屉动画需单一内层
+
+                    // ── 版本导航条：[‹] 3楼·版本2/5 [当前采用 / 仅查看] ……… [›]
+                    const nav = document.createElement('div'); nav.className = 'swipe-nav';
+                    if (swipes.length > 1) {
+                        snPrev = document.createElement('button');
+                        snPrev.className = 'sn-arrow'; snPrev.textContent = '‹'; snPrev.title = '上一版';
+                        snPrev.onclick = () => setSwipe(cur - 1);
+                        nav.appendChild(snPrev);
+                    }
+                    snCount = document.createElement('span'); snCount.className = 'sn-count'; nav.appendChild(snCount);
+                    snTags = document.createElement('span'); snTags.className = 'sn-tags'; nav.appendChild(snTags);
+                    const spring = document.createElement('span'); spring.className = 'sn-spring'; nav.appendChild(spring);
+                    if (swipes.length > 1) {
+                        snNext = document.createElement('button');
+                        snNext.className = 'sn-arrow'; snNext.textContent = '›'; snNext.title = '下一版';
+                        snNext.onclick = () => setSwipe(cur + 1);
+                        nav.appendChild(snNext);
+                    }
+                    inner.appendChild(nav);
+
+                    // ── 版本堆：全部建壳，只有 .cur 显示、只有被显示过的才渲染正文
+                    deck = document.createElement('div'); deck.className = 'swipe-deck';
                     swipes.forEach((t, si) => {
                         const sw = document.createElement('div');
-                        sw.className = 'swipe';
-                        const chosen = si === m.swipeId;
-                        const arch = isArchived(saved, m.floorIndex, si, m.sendDate, t);
-
-                        const bar = document.createElement('div');
-                        bar.className = 'swipe-bar';
-                        bar.innerHTML =
-                            `<span class="path-label">${m.floorIndex}楼 · 版本${si}</span>` +
-                            (chosen ? '<span class="chosen-tag">当前采用</span>' : '') +
-                            (arch ? '<span class="saved-tag">已存档</span>' : '');
-                        const btn = document.createElement('button');
-                        btn.textContent = arch ? '再存一份' : '存档';
-                        btn.onclick = () => archiveSwipe(m, si, t, chosen);
-                        bar.appendChild(btn);
-                        sw.appendChild(bar);
-
-                        const body = document.createElement('div');
-                        const r = renderMd(t);
-                        body.className = 'swipe-body' + (r.plain ? ' plain' : '');
-                        body.innerHTML = r.html;
-                        sw.appendChild(body);
-                        inner.appendChild(sw);
+                        sw.className = 'swipe' + (si === cur ? ' cur' : '');
+                        deck.appendChild(sw);
                     });
+                    inner.appendChild(deck);
+                    renderOne(cur);
+
+                    // [MP] 左右滑切版本。只吃「横向明显占优」的手势，其余一律放行给页面纵向滚动，
+                    // 不然在长正文里随便一划就换版，比原来还难用。
+                    if (swipes.length > 1) {
+                        let sx = 0, sy = 0, tracking = false, lock = 0;   // lock: 0未定 1横 2纵
+                        deck.addEventListener('touchstart', (e) => {
+                            if (e.touches.length !== 1) { tracking = false; return; }
+                            sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+                            tracking = true; lock = 0;
+                        }, { passive: true });
+                        deck.addEventListener('touchmove', (e) => {
+                            if (!tracking || e.touches.length !== 1) return;
+                            const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+                            if (!lock) {
+                                if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+                                lock = Math.abs(dx) > Math.abs(dy) * 1.4 ? 1 : 2;   // 横向要明显压过纵向才算横滑
+                            }
+                            if (lock === 1 && e.cancelable) e.preventDefault();      // 锁横之后掐掉页面跟着滚
+                        }, { passive: false });
+                        deck.addEventListener('touchend', (e) => {
+                            const wasH = tracking && lock === 1;
+                            tracking = false; lock = 0;
+                            if (!wasH) return;
+                            const dx = e.changedTouches[0].clientX - sx;
+                            if (Math.abs(dx) < 48) return;                            // 太短当误触
+                            setSwipe(cur + (dx < 0 ? 1 : -1));                        // 左滑看下一版，右滑看上一版
+                        }, { passive: true });
+                    }
+
+                    // ── 底部收起条：长正文滑到底自然撞上它
+                    const cbar = document.createElement('div');
+                    cbar.className = 'floor-collapse';
+                    cbar.innerHTML = '<span class="fc-caret">▲</span><span>收起本楼</span>';
+                    cbar.onclick = () => collapseFloor();
+                    inner.appendChild(cbar);
+
                     box.appendChild(inner);
+                    syncNav();
+                };
+
+                // [MP] 收起统一走这里：收完把楼层头顶回顶栏底下，
+                // 否则正文一抽走，视口会掉到下面某一楼的中间，人直接迷路
+                const collapseFloor = () => {
+                    floor.classList.remove('open');
+                    mpSlide(box, false);
+                    mpScrollFloorTop(floor);
                 };
                 head.onclick = () => {
-                    const willOpen = !floor.classList.contains('open');
-                    if (willOpen) buildSwipes();
-                    floor.classList.toggle('open');
-                    mpSlide(box, willOpen);   // [MP-美化] 正文滑动展开收起
+                    if (floor.classList.contains('open')) { collapseFloor(); return; }
+                    buildSwipes();
+                    floor.classList.add('open');
+                    mpSlide(box, true);   // [MP-美化] 正文滑动展开收起
+                };
+                // [MP] 给「重绘后接回书签」用的无动画展开：重绘时不该演一遍展开动画，
+                // 那是给手点准备的；这里要的是重建完就已经是展开态，像什么都没发生过。
+                floor.__mpOpenNow = () => {
+                    buildSwipes();
+                    floor.classList.add('open');
+                    box.style.maxHeight = 'none';
+                    box.style.opacity = '1';
                 };
                 frag.appendChild(floor);
             }
@@ -2643,8 +3573,23 @@
             main.innerHTML = '';
             if (!shown) main.innerHTML = '<div class="empty">没有符合筛选条件的楼层</div>';
             else main.appendChild(frag);
-            document.getElementById('stat').textContent = `共${snapshot.count}楼，显示${shown}，已存档${saved.length}条`;
+            document.getElementById('stat').textContent =
+                `共${SNAP.count}楼，显示${shown}` + (SNAP.offline ? ' · 书架离线本' : '');
             await updateInjectMarker();  // [MP] 画注入落点
+
+            // [MP] 接回书签：先把原来展开的楼无动画地重新展开（高度变了会影响下面的定位，
+            // 所以必须在算滚动之前做完），再把锚点那一楼推回它原来卡在视口顶上的位置。
+            _wasOpen.forEach(fi => {
+                const f = main.querySelector('.floor[data-floor="' + fi + '"]');
+                if (f && f.__mpOpenNow) f.__mpOpenNow();
+            });
+            if (_anchor != null) {
+                const f = main.querySelector('.floor[data-floor="' + _anchor + '"]');
+                if (f) {
+                    const delta = (f.getBoundingClientRect().top - _B.getBoundingClientRect().top) - _anchorOff;
+                    if (Math.abs(delta) > 1) _B.scrollTop += delta;
+                }
+            }
         }
 
         // [MP] 算注入落点：位置=最前→top；深度0→垫最后一楼下面；深度D→从底数第D可见楼上方
@@ -2687,6 +3632,52 @@
             attachInjectDrag(el);   // [MP] 挂上拖动手柄
             return el;
         }
+
+        // [MP] 滚动既不在文档也不在 body，而在 #mp-scroll 这一层（见页首那段注释）。
+        // 全站凡是要滚页的地方一律走这里取容器，别再直接摸 window / document.body，
+        // 上一次 B 方案把注入点拖拽搞崩就是因为三处 window.scrollBy 变成了空操作。
+        function mpScroller() {
+            return document.getElementById('mp-scroll') || document.scrollingElement || document.body;
+        }
+        function mpScrollBy(dy) {
+            const b = mpScroller();
+            if (b && b.scrollHeight > b.clientHeight) { b.scrollTop += dy; return; }
+            window.scrollBy(0, dy);   // 兜底：万一将来滚动又被挪回文档
+        }
+
+        // [MP] 量顶栏实高，加上 6px 细缝，整个写进 --mp-glasstop。
+        // 磨砂玻璃(html::after)的上沿和滚动层(#mp-scroll)的上沿都吃这个值，两边永远对齐。
+        // 写死 54px 会穿帮：顶栏里 chatkey 一长就换行，高度跟着变。
+        // 这 6px 必须在 JS 里加完再给出去——CSS 那边写 calc(var(--x) + 6px) 这台老 WebView 不认。
+        const MP_GLASS_GAP = 6;   // 顶栏底与玻璃上沿之间故意漏的那条原水彩细缝
+        function mpSyncGlassTop() {
+            const h = document.querySelector('header');
+            if (!h) return;
+            document.documentElement.style.setProperty('--mp-glasstop', (h.offsetHeight + MP_GLASS_GAP) + 'px');
+        }
+        mpSyncGlassTop();
+        window.addEventListener('resize', mpSyncGlassTop);
+        window.addEventListener('load', mpSyncGlassTop);   // 字体加载完顶栏高度会再动一次
+
+        // [MP] 收起某楼后，把它的头顶回滚动区上沿。不这么做的话正文一抽走，
+        // 视口会原地掉进下面某一楼的中间，人完全找不着刚才在看哪儿。
+        // 参照物取滚动层自己的 rect，顶栏怎么变高都不用管。
+        function mpScrollFloorTop(floor) {
+            if (!floor) return;
+            const B = mpScroller();
+            const want = B.getBoundingClientRect().top + 8;
+            const top = floor.getBoundingClientRect().top;   // 只看纵坐标，不受收起动画改高度影响
+            if (top < want) B.scrollTop += (top - want);
+        }
+
+        // [MP] 滚动层比裁刀宽 20px（那条是拿来把原生滚动条挤出去的），横向理论上有 20px 可滚。
+        // overflow-x:hidden 在这台老 WebView 上拦不住触摸拖动，把 scrollLeft 钉死在 0 兜一道。
+        // （「整页能被左右拖、松手弹回」那个已经由 #mp-scroll 分层根治了，这里只是保险。）
+        (function () {
+            const sc = document.getElementById('mp-scroll');
+            if (!sc) return;
+            sc.addEventListener('scroll', () => { if (sc.scrollLeft !== 0) sc.scrollLeft = 0; }, { passive: true });
+        })();
 
         // [MP] 注入落点手柄：按住 ↕ 上下拖，落到哪两楼之间就反推深度写回设置
         function mpVisMsgs() { return (snapshot && snapshot.messages) ? snapshot.messages.filter(m => !m.is_system) : []; }
@@ -2731,8 +3722,8 @@
                 scrollTimer = setInterval(() => {
                     if (!dragging) return;
                     const h = window.innerHeight;
-                    if (lastY < 80) { window.scrollBy(0, -18); placeDropline(lastY); }
-                    else if (lastY > h - 80) { window.scrollBy(0, 18); placeDropline(lastY); }
+                    if (lastY < 80) { mpScrollBy(-18); placeDropline(lastY); }
+                    else if (lastY > h - 80) { mpScrollBy(18); placeDropline(lastY); }
                 }, 24);
             }
             function onMove(e) {
@@ -2745,7 +3736,7 @@
                     return;
                 }
                 // [MP] 未进入拖动这段：touch-action:none 掐了原生滚动，这里按手指位移手动滚页，落在标题栏上照样能滑
-                window.scrollBy(0, prevMoveY - cy);
+                mpScrollBy(prevMoveY - cy);
                 prevMoveY = cy;
                 lastY = cy; lastX = e.clientX;
                 if (Math.abs(cy - startY) > MOVE_TOL) clearTimer();   // 长按未到就挪动=放弃
@@ -2798,69 +3789,8 @@
             else { const w = marker.querySelector('.im-where'); if (w) w.textContent += '（该楼当前被筛选，标记暂置顶）'; main.insertBefore(marker, main.firstChild); }
         }
 
-        async function archiveSwipe(m, swipeIndex, text, isChosen) {
-            try {
-                await addProse({
-                    chatKey: snapshot.chatKey,
-                    floorIndex: m.floorIndex,
-                    swipeIndex: swipeIndex,
-                    isChosen: !!isChosen,
-                    sendDate: m.sendDate || null,
-                    textPrefix: textPrefix80(text),
-                    content: text,
-                    savedAt: new Date().toISOString(),
-                    note: '',
-                });
-                toast(`已存档 ${m.floorIndex}楼·版本${swipeIndex}`);
-                await render();
-                renderCharTree();   // [MP] 正文条数变了刷新侧栏
-            } catch (e) {
-                toast('存档失败: ' + (e && e.message || e));
-            }
-        }
-
-        ['f-ai', 'f-saved'].forEach(id => document.getElementById(id).onchange = render);
+        document.getElementById('f-ai').onchange = render;
         document.getElementById('f-kw').oninput = () => { clearTimeout(window.__kwT); window.__kwT = setTimeout(render, 200); };
-
-        // [MP] ============ 正文存档清单：核对存档↔酒馆对应 ============
-        // 给一条存档去当前快照里认位置，返回 {status, floor, swipe}
-        //   exact  = 原位在、内容一致
-        //   moved  = 指纹(时间戳+开头)在别处/别版本命中，位置变了
-        //   edited = 原楼原版本还在、但正文被改过（对不上开头，也没在别处找到）
-        //   orphan = 全聊天都找不到（源楼多半从底部被删了）
-        function locateProse(rec, messages) {
-            if (!messages || !messages.length) return { status: 'unknown' };
-            const pfx = rec.textPrefix || textPrefix80(rec.content);
-            const swOf = (m) => (m.swipes && m.swipes.length ? m.swipes : [m.mes]);
-            // 1) 原位精确
-            const at = messages[rec.floorIndex];
-            if (at) {
-                const sw = swOf(at);
-                const t = sw[rec.swipeIndex];
-                if (t != null && textPrefix80(t) === pfx) return { status: 'exact', floor: rec.floorIndex, swipe: rec.swipeIndex };
-            }
-            // 2) 指纹全局找（时间戳一致 或 落回同楼号），开头对上即命中
-            for (const m of messages) {
-                const dateOk = rec.sendDate && m.sendDate && rec.sendDate === m.sendDate;
-                if (!dateOk && m.floorIndex !== rec.floorIndex) continue;
-                const sw = swOf(m);
-                for (let si = 0; si < sw.length; si++) {
-                    if (textPrefix80(sw[si]) === pfx) return { status: 'moved', floor: m.floorIndex, swipe: si };
-                }
-            }
-            // 3) 原楼原版本槽还在，但正文改了
-            if (at && swOf(at)[rec.swipeIndex] != null) return { status: 'edited', floor: rec.floorIndex, swipe: rec.swipeIndex };
-            // 4) 彻底找不到
-            return { status: 'orphan' };
-        }
-
-        const PROSE_STATUS_TXT = {
-            exact: (r) => `对上 · 第${r.floor}楼·版本${r.swipe} · 内容一致`,
-            moved: (r) => `位置变了 · 现在在 第${r.floor}楼·版本${r.swipe}`,
-            edited: (r) => `同楼正文改过 · 第${r.floor}楼·版本${r.swipe}`,
-            orphan: () => `对不上 · 源楼已不在（孤儿）`,
-            unknown: () => `未核对 · 先刷新快照`,
-        };
 
         // [MP] 扫三库，按聊天汇总每个聊天各自存了多少
         async function allArchiveKeys() {
@@ -2939,9 +3869,19 @@
                     const b = document.createElement('div'); const r = renderMd(rec.content);
                     b.className = 'swipe-body' + (r.plain ? ' plain' : ''); b.innerHTML = r.html;
                     inner.appendChild(b);
+                    // [MP] 存档正文一样可能很长，收起条跟实时楼层保持一致
+                    const cbar = document.createElement('div');
+                    cbar.className = 'floor-collapse';
+                    cbar.innerHTML = '<span class="fc-caret">▲</span><span>收起本条</span>';
+                    cbar.onclick = () => collapseThis();
+                    inner.appendChild(cbar);
                     box.appendChild(inner);
                 };
-                head.onclick = () => { const willOpen = !floor.classList.contains('open'); if (willOpen) build(); floor.classList.toggle('open'); mpSlide(box, willOpen); };
+                const collapseThis = () => { floor.classList.remove('open'); mpSlide(box, false); mpScrollFloorTop(floor); };
+                head.onclick = () => {
+                    if (floor.classList.contains('open')) { collapseThis(); return; }
+                    build(); floor.classList.add('open'); mpSlide(box, true);
+                };
                 floor.appendChild(head); floor.appendChild(box); frag.appendChild(floor);
             });
             main.innerHTML = ''; main.appendChild(frag);
@@ -2953,10 +3893,15 @@
             selectedChatKey = chatKey;
             const live = selectedIsLive();
             document.querySelectorAll('.ct-chat').forEach(b => b.classList.toggle('sel', b.dataset.key === chatKey));
-            // [MP] 筛选标签常驻（保持顶端位置恒定）；非在线只是禁用控件+给提示，不隐藏
-            ['f-ai', 'f-saved', 'f-kw'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !live; });
-            const fh = document.getElementById('filter-hint'); if (fh) fh.style.display = live ? 'none' : '';
-            if (live) await render(); else await renderArchivedProse(chatKey);
+            // [MP] 书架上的书是本地整本，筛选/检索照样能用，不该禁
+            const offlineBook = live ? null : await loadBookSnapshot(chatKey);
+            bookSnapshot = offlineBook;
+            const usable = live || !!offlineBook;
+            ['f-ai', 'f-kw'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !usable; });
+            const fh2 = document.getElementById('filter-hint'); if (fh2) fh2.style.display = usable ? 'none' : '';
+            syncReadMode();
+            if (live || offlineBook) await render();
+            else await renderArchivedProse(chatKey);   // 老版本蜜脾按版本存下的碎条，还认得
             await renderCodex(chatKey);
             await renderSummaryHistory(chatKey);
             await renderViz(chatKey);
@@ -2980,6 +3925,77 @@
             el.addEventListener('touchmove', clear, { passive: true });
             el.addEventListener('touchend', clear, { passive: true });
             el.addEventListener('touchcancel', clear, { passive: true });
+        }
+
+        // [MP] 长按小菜单。侧边栏这一条能干的事都塞这里：改名、收进书架、移出书架。
+        //   不另做「从酒馆里挑一本」的入口：那要把酒馆整份对话名单拉出来铺一屏，
+        //   而侧边栏本来就只列「蜜脾有记录的 + 酒馆此刻开着的」，你要收的那本必然已经在眼前。
+        function closeLpMenu() { document.getElementById('lp-modal').classList.remove('show'); }
+        document.getElementById('lp-close').onclick = closeLpMenu;
+        document.getElementById('lp-modal').onclick = (e) => { if (e.target.id === 'lp-modal') closeLpMenu(); };
+
+        function openLpMenu(chatKey, live) {
+            const { chat } = splitChatKey(chatKey);
+            document.getElementById('lp-title').textContent = chat || '(无名对话)';
+            const onShelf = isBook(chatKey);
+            document.getElementById('lp-sub').innerHTML = onShelf
+                ? '在书架上，蜜脾跟着酒馆同步整本（原文+净版）'
+                : '还没收进书架，蜜脾本地没有它的正文';
+            const acts = document.getElementById('lp-acts');
+            acts.innerHTML = '';
+            const mk = (label, sub, cls, fn) => {
+                const b = document.createElement('button');
+                if (cls) b.className = cls;
+                b.innerHTML = esc(label) + (sub ? `<span class="lp-sub">${esc(sub)}</span>` : '');
+                b.onclick = fn;
+                acts.appendChild(b);
+            };
+            if (live) mk('给对话改名', '同步改酒馆，蜜脾这边的存档一并迁过去', '', () => { closeLpMenu(); openRenameModal(); });
+            if (!onShelf) {
+                mk(live ? '收进书架' : '收进书架（要先在酒馆打开它）',
+                    live ? '把整本抄一份到蜜脾本地，酒馆睡了也能读、能导出' : '净版要酒馆那边跑正则，所以只能收当前打开的那本',
+                    '', async () => {
+                        closeLpMenu();
+                        if (!live) { toast('先到酒馆打开这个对话，再回来收'); return; }
+                        try { await enrollBook(chatKey); } catch (e) { toast('收进书架失败：' + (e && e.message || e)); }
+                    });
+            } else {
+                // [MP] 不做「手动重抄」：同步本来就是自动的，卡住了刷新一下就好，多一颗钮只是多一个要你操心的东西
+                mk('移出书架', '停止同步，并删掉蜜脾本地这份正文', 'danger', async () => {
+                    closeLpMenu();
+                    await removeBook(chatKey);
+                });
+            }
+            document.getElementById('lp-modal').classList.add('show');
+        }
+
+        // [MP] 移出书架。有总结/档案挂着的时候多问一句：正文一走，它们就没有对应的原文了。
+        async function removeBook(chatKey) {
+            let extra = '';
+            try {
+                const all = await allArchiveKeys();
+                const rec = all.find(r => r.chatKey === chatKey);
+                if (rec && (rec.vols || rec.codex)) {
+                    extra = `\n\n注意：这本还挂着 ${rec.vols} 卷总结${rec.codex ? '和一份档案' : ''}。` +
+                        `正文删了之后，它们就找不到对应的原文了（总结和档案本身不会删）。`;
+                }
+            } catch (e) { }
+            if (!confirm(`把「${splitChatKey(chatKey).chat}」移出书架？\n\n· 蜜脾本地这份正文会删掉\n· 蜜脾不再跟着同步它\n· 酒馆里的对话一个字都不动${extra}`)) return;
+            bookKeys.delete(chatKey);
+            lastMirrorSig.delete(chatKey);
+            await saveBookKeys();
+            try {
+                const store = tx('prose', 'readwrite');
+                await new Promise((res, rej) => {
+                    const req = store.index('chatKey').openCursor(IDBKeyRange.only(chatKey));
+                    req.onsuccess = () => { const c = req.result; if (c) { c.delete(); c.continue(); } else res(); };
+                    req.onerror = () => rej(req.error);
+                });
+            } catch (e) { toast('本地正文删除出错：' + (e && e.message || e)); }
+            if (selectedChatKey === chatKey) bookSnapshot = null;
+            toast('已移出书架');
+            await renderCharTree();
+            if (selectedChatKey === chatKey) await selectChat(chatKey);
         }
 
         // [MP] 侧边栏角色树：一排角色卡→点开展开该角色名下有蜜脾记录（或正在线）的对话
@@ -3017,17 +4033,22 @@
                     const btn = document.createElement('button');
                     btn.className = 'ct-chat' + (c.chatKey === selectedChatKey ? ' sel' : '');
                     btn.dataset.key = c.chatKey;
-                    const bits = [`正文${c.prose}`, `总结${c.vols}卷`, c.codex ? '档案✓' : ''].filter(Boolean).join(' · ');
+                    const shelved = isBook(c.chatKey);
+                    const bits = [shelved ? `整本${c.prose}楼` : '未存档', `总结${c.vols}卷`, c.codex ? '档案✓' : ''].filter(Boolean).join(' · ');
+                    // [MP] 回形针斜插在卡片右上角，绝对定位不吃名字行的宽度
+                    const clip = shelved
+                        ? '<svg class="ct-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>在书架上</title><path d="M15 7l-6.5 6.5a1.5 1.5 0 0 0 3 3l6.5 -6.5a3 3 0 0 0 -6 -6l-6.5 6.5a4.5 4.5 0 0 0 9 9l6.5 -6.5"/></svg>'
+                        : '';
                     btn.innerHTML =
-                        `<span class="ct-cline"><span class="ct-cname">${esc(c.chat || '(无名对话)')}</span>${live ? '<span class="ct-live" title="在线"></span>' : ''}</span>` +
-                        `<span class="ct-cbits">${bits || '（空）'}</span>`;
+                        `<span class="ct-cline"><span class="ct-cname">${esc(c.chat || '(无名对话)')}</span>` +
+                        `${live ? '<span class="ct-live" title="在线"></span>' : ''}</span>` +
+                        `<span class="ct-cbits">${bits}</span>` + clip;
                     btn.onclick = () => { if (btn._lp) { btn._lp = false; return; } selectChat(c.chatKey); };
-                    if (live) {
-                        // [MP] 铅笔已删：在线对话长按即改名（酒馆 renameChat 只认当前打开的聊天）
-                        btn.classList.add('online');
-                        btn.title = '长按可改名';
-                        bindLongPress(btn, () => openRenameModal());
-                    }
+                    // [MP] 长按任何一条都弹小菜单：收进书架 / 移出书架 / 改名(仅在线)。
+                    //   改名只对在线那条开放，因为酒馆的 renameChat 只认当前打开的聊天。
+                    if (live) btn.classList.add('online');
+                    btn.title = '长按：收进书架 / 移出' + (live ? ' / 改名' : '');
+                    bindLongPress(btn, () => openLpMenu(c.chatKey, live));
                     body.appendChild(btn);
                 });
                 card.appendChild(head); card.appendChild(body); wrap.appendChild(card);
@@ -3081,6 +4102,7 @@
             mpSlide(pane, open);   // [MP-美化] 顶部抽屉滑动
             mpSyncDrawerOpen();
             // [MP] 功能键(档案/总结/筛选)互斥：拉起一个，自动收起前一个功能面板；后面的分类键照旧可叠加
+            // [MP] 存档清单每次拉开都现算一遍，保证「对不对得上」是此刻的实情，不是上次留下的旧判断
             const FN_PANES = ['codex', 'sum', 'filter'];
             if (open && FN_PANES.indexOf(b.dataset.pane) !== -1) {
                 FN_PANES.forEach(name => {
@@ -3102,8 +4124,17 @@
 
         // [MP-美化] ============ 外观：预设皮肤选择（只选预设，不做自定义） ============
         // 每个预设 = { id: data-theme 值（''=默认暖橘棕）, name, swatch: 展示色块 }
+        // swatch 是完整 CSS background 值，撞色皮肤用对半渐变展示两个主色（accent × ai）
         const MP_SKINS = [
-            { id: '', name: '琥珀蜜', swatch: '#c17a3a' },
+            { id: '', name: '蜜渍琥珀', swatch: 'linear-gradient(135deg,#e0a860 50%,#d97757 50%)' },   // [MP-美化] 色卡用发亮身份色：亮蜜金 --h × Claude橙 --sel（--accent 是压深的字色，不代表观感，色卡取 --h 才不骗人）
+            { id: 'rose', name: '尘埃玫瑰', swatch: 'linear-gradient(135deg,#c96f88 50%,#5570b8 50%)' },
+            { id: 'letter', name: '沉水信笺', swatch: 'linear-gradient(135deg,#38897c 50%,#4a6ead 50%)' },
+            { id: 'wisteria', name: '紫藤月白', swatch: 'linear-gradient(135deg,#7a5fbd 50%,#a84f80 50%)' },
+            { id: 'robin', name: '青鸾赤羽', swatch: 'linear-gradient(135deg,#c04d3e 50%,#3e7d52 50%)' },
+            { id: 'inkwash', name: '宣纸松烟', swatch: 'linear-gradient(135deg,#4d5566 50%,#ad5346 50%)' },
+            // [MP-美化] 暗色两款：色块外圈补一道暗环，在浅色弹窗里一眼认出这是夜面皮肤
+            { id: 'nightamber', name: '子夜蜜灯', swatch: 'linear-gradient(135deg,#e0a860 50%,#e2604f 50%)', dark: true },
+            { id: 'abyss', name: '深海夜光', swatch: 'linear-gradient(135deg,#5fb8c8 50%,#e08050 50%)', dark: true },
         ];
         // [MP-美化] 只认 MP_SKINS 里的 id；老用户存的 'platinum' 等已删皮肤一律回落默认
         function currentSkin() {
@@ -3121,7 +4152,7 @@
             const list = document.getElementById('skin-list'); if (!list) return;
             const cur = currentSkin();
             list.innerHTML = MP_SKINS.map(s =>
-                `<div class="skin-item${s.id === cur ? ' sel' : ''}" data-skin="${esc(s.id)}"><span class="skin-swatch" style="background:${esc(s.swatch)}"></span><span class="skin-name">${esc(s.name)}</span><span class="skin-check">✓</span></div>`
+                `<div class="skin-item${s.id === cur ? ' sel' : ''}" data-skin="${esc(s.id)}"><span class="skin-swatch${s.dark ? ' dk' : ''}" style="background:${esc(s.swatch)}"></span><span class="skin-name">${esc(s.name)}</span>${s.dark ? '<span class="skin-tag">夜</span>' : ''}<span class="skin-check">✓</span></div>`
             ).join('');
         }
         document.getElementById('btn-skin').onclick = () => { renderSkinList(); document.getElementById('skin-modal').classList.add('show'); };
@@ -3142,6 +4173,9 @@
         function applyGlass(on) {
             document.documentElement.setAttribute('data-glass', on ? 'on' : 'off');
             try { localStorage.setItem('mp_glass', on ? '1' : '0'); } catch (e) { }
+            // 关掉毛玻璃时那层纱整片撤掉，透明度滑杆此刻无意义，置灰不可拖
+            const row = document.getElementById('row-glass-a');
+            if (row) row.classList.toggle('off', !on);
         }
         // 开关接线
         const optGlass = document.getElementById('opt-glass');
@@ -3152,28 +4186,61 @@
             toast(optGlass.checked ? '已开启毛玻璃' : '已关闭毛玻璃');
         });
 
+        // [MP-美化] 磨砂透明度滑杆：localStorage mp_glass_a = 透明度百分数(0~100，默认70)
+        //   读数越大 → 纱越薄 → 背景透得越多。落地成 :root 的内联 --wash-a，
+        //   内联优先级高于 :root[data-theme=xxx]，所以八款皮肤共用这一档，切皮肤不会被顶回去。
+        const GLASS_A_DEF = 70;
+        function glassAlphaPct() {
+            try {
+                const v = localStorage.getItem('mp_glass_a');
+                if (v === null || v === '' || isNaN(+v)) return GLASS_A_DEF;
+                return Math.min(100, Math.max(0, Math.round(+v)));
+            } catch (e) { return GLASS_A_DEF; }
+        }
+        function applyGlassAlpha(pct, save) {
+            pct = Math.min(100, Math.max(0, Math.round(pct)));
+            document.documentElement.style.setProperty('--wash-a', String((100 - pct) / 100));
+            const lb = document.getElementById('glass-a-val');
+            if (lb) lb.textContent = pct + '%';
+            if (save) { try { localStorage.setItem('mp_glass_a', String(pct)); } catch (e) { } }
+        }
+        const optGlassA = document.getElementById('opt-glass-a');
+        optGlassA.value = String(glassAlphaPct());
+        applyGlassAlpha(glassAlphaPct(), false);
+        // input 事件：拖的过程中实时变，松手前就能看见效果（手机上没控制台，所见即所得最要紧）
+        optGlassA.addEventListener('input', () => applyGlassAlpha(+optGlassA.value, true));
+
         // [MP-美化] ============ 背景库（只管全局背景）============
         //  mpBgs = 用户导入的图列表 [{id,data(dataURL)}]，存 IndexedDB settings 的 mp_bgs
         //  mpBgSel = 当前选中的背景 id，''=默认水彩 bg.jpg，存 mp_bg_sel
         //  真正上屏：注入 <style id=mp-bg-style> 覆盖 html::before 的 background-image（老 WebView 认这个，不认 CSS 变量塞 data URL）
         let mpBgs = [];
         let mpBgSel = '';
-        function applyBgImage(dataUrl) {
+        function applyBgCss(css) {
             let s = document.getElementById('mp-bg-style');
             if (!s) { s = document.createElement('style'); s.id = 'mp-bg-style'; document.head.appendChild(s); }
-            s.textContent = dataUrl ? ('html::before{background-image:url("' + dataUrl + '") !important;}') : '';
+            s.textContent = css ? ('html::before{' + css + '}') : '';
         }
         function applySelectedBg() {
-            const sel = mpBgs.find(b => b.id === mpBgSel);
-            applyBgImage(sel ? sel.data : null);
+            let css = '', label = '默认水彩';
+            // [MP-美化] 纯白/纯黑是"我就要这个色"，连暗皮肤的底图罩纱一起掀掉；自定义图保留罩纱（暗皮肤下才不刺眼）
+            if (mpBgSel === 'white') { css = 'background:#ffffff !important;box-shadow:none !important;'; label = '纯白'; }
+            else if (mpBgSel === 'black') { css = 'background:#000000 !important;box-shadow:none !important;'; label = '纯黑'; }
+            else {
+                const sel = mpBgs.find(b => b.id === mpBgSel);
+                if (sel) { css = 'background-image:url("' + sel.data + '") !important;'; label = '自定义图片'; }
+            }
+            applyBgCss(css);
             const st = document.getElementById('bg-state');
-            if (st) st.innerHTML = '当前：<b>' + (sel ? '自定义图片' : '默认水彩') + '</b>';
+            if (st) st.innerHTML = '当前：<b>' + label + '</b>';
         }
         function renderBgGallery() {
             const g = document.getElementById('bg-gallery'); if (!g) return;
             let html = '';
-            // 默认水彩固定第一格
+            // 内置三格：默认水彩 / 纯白 / 纯黑（不可删）
             html += '<div class="bg-cell' + (mpBgSel === '' ? ' sel' : '') + '" data-bg="" style="background-image:url(\'bg.jpg\')"><span class="bg-check">✓</span><span class="bg-tag">默认水彩</span></div>';
+            html += '<div class="bg-cell' + (mpBgSel === 'white' ? ' sel' : '') + '" data-bg="white" style="background:#ffffff"><span class="bg-check">✓</span><span class="bg-tag" style="color:#8a8a8a;text-shadow:none">纯白</span></div>';
+            html += '<div class="bg-cell' + (mpBgSel === 'black' ? ' sel' : '') + '" data-bg="black" style="background:#000000"><span class="bg-check">✓</span><span class="bg-tag">纯黑</span></div>';
             for (const b of mpBgs) {
                 html += '<div class="bg-cell' + (mpBgSel === b.id ? ' sel' : '') + '" data-bg="' + esc(b.id) + '" style="background-image:url(\'' + b.data + '\')"><span class="bg-check">✓</span><button class="bg-del" data-del="' + esc(b.id) + '" title="删除">✕</button></div>';
             }
@@ -3197,7 +4264,7 @@
                         try { await putSetting('mp_bg', null); } catch (e) { }
                     }
                 }
-                if (!mpBgs.some(b => b.id === mpBgSel)) mpBgSel = '';
+                if (mpBgSel !== 'white' && mpBgSel !== 'black' && !mpBgs.some(b => b.id === mpBgSel)) mpBgSel = '';
             } catch (e) { mpBgs = []; mpBgSel = ''; }
             applySelectedBg();
             renderBgGallery();
@@ -3326,6 +4393,9 @@
         // [MP] 把本地三库（正文/总结/档案）里旧 chatKey 的记录整体搬到新 chatKey
         async function migrateChatKey(oldKey, newKey) {
             if (!db || !oldKey || !newKey || oldKey === newKey) return;
+            // [MP] 书架名单也跟着改名走，否则改完名这本就从书架上掉下来了，同步也停了
+            if (bookKeys.has(oldKey)) { bookKeys.delete(oldKey); bookKeys.add(newKey); await saveBookKeys(); }
+            lastMirrorSig.delete(oldKey);
             const proseRows = await proseForChat(oldKey);
             for (const r of proseRows) { r.chatKey = newKey; await idbReq(tx('prose', 'readwrite').put(r)); }
             const sumRows = await summariesForChat(oldKey);
@@ -3372,6 +4442,7 @@
                 prose: await getAll('prose'),
                 summaries: await getAll('summaries'),
                 codex: await getAll('codex'),
+                books: Array.from(bookKeys),   // [MP] 书架名单也带走，换手机导回去还是那几本书
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -3396,6 +4467,8 @@
                 for (const r of (data.prose || [])) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
                 for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
                 for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
+                // [MP] 书架名单并进来（合并不覆盖，别把这台机器上已有的书踢下架）
+                if (Array.isArray(data.books)) { data.books.forEach(k => bookKeys.add(k)); await saveBookKeys(); }
                 toast(`已导入 ${n} 条`);
                 await renderCharTree();   // [MP] 导入后刷新侧栏
                 if (selectedChatKey) await selectChat(selectedChatKey);
@@ -3428,6 +4501,7 @@
             try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
             try { await initBgLibrary(); } catch (e) { dlog('背景库载入失败: ' + e, true); } // [MP-美化] 载入背景库并铺上已选背景
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
+            try { await loadBookKeys(); dlog('书架名单已载入，' + bookKeys.size + ' 本'); } catch (e) { dlog('书架名单载入失败: ' + e, true); }
             try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
             try { await renderViz(null); } catch (e) { } // [MP-美化] 空页面也把五个分类抽屉常驻摆出来，别让顶栏空半截
             // [MP] 桥还没上线也先把上次的在线对话直连读盘摆出来（酒馆页冻着也能显示正文，不用干等桥）
