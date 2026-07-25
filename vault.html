@@ -476,8 +476,6 @@
             flex-wrap: nowrap;
         }
 
-        .title { font-weight: 600; color: var(--accent); letter-spacing: .02em; }
-
         /* [MP-美化] 顶栏品牌标：Miel 的几何蜂 logo，跟随主题染色 */
         .brand-logo { height: 26px; width: auto; color: var(--accent); flex: 0 0 auto; display: block; }
 
@@ -538,33 +536,11 @@
         /* [MP-美化] 主按钮 hover 换档：填充走 --btn-hi，光晕仍取 accent 的 rgb 保住主题辉光 */
         @media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--btn-hi); box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.5); } }
 
-        /* [MP-美化] 工具栏磨砂玻璃 */
-        .toolbar {
-            padding: 10px 16px;
-            display: flex;
-            gap: 14px;
-            align-items: center;
-            flex-wrap: wrap;
-            background: var(--panel);
-            -webkit-backdrop-filter: var(--glass-blur);
-            backdrop-filter: var(--glass-blur);
-            border-bottom: 1px solid var(--glass-line);
-        }
-
         /* [MP-美化] 楼层计数并进「筛选检索」标题行，右顶格，小字淡描 */
         .filter-stat { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: .2px; opacity: .8; white-space: nowrap; }
         /* [MP-美化] 检索关键字行：标签不换行，输入框吃满剩余宽度 */
         .kw-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 0; }
         .kw-row input[type="text"] { width: auto; flex: 1 1 auto; }
-        .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-        .toolbar input[type="text"] {
-            background: var(--sf);
-            border: 1px solid var(--glass-line);
-            color: var(--ink);
-            border-radius: var(--radius-sm);
-            padding: 5px 11px;
-            min-width: 200px;
-        }
 
         /* [MP-美化] 主面板磨砂玻璃，柔阴影替硬边框 */
         .panel {
@@ -585,8 +561,6 @@
         .icon-btn.mp-x { margin-left: auto; background: transparent; border: none; box-shadow: none; color: var(--sel); font-size: 21px; line-height: 1; font-weight: 500; padding: 2px 8px; }
         @media (hover: hover) { .icon-btn.mp-x:hover { background: transparent; box-shadow: none; color: var(--sel2); } }
 
-        .settings { display: none; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
-        .settings.show { display: block; }
         .srow { margin-bottom: 8px; }
         /* [MP] 折叠式提示词编辑（塞在总结/档案视图底部，平时收起） */
         .prompt-fold { margin-top: 12px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; padding-top: 8px; }
@@ -799,7 +773,6 @@
             margin-bottom: 6px;
         }
 
-        .path-label { font-size: 12px; color: var(--accent); font-weight: 600; }
         .chosen-tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; }
         /* [MP] 翻到非采用版本时的提醒：素面无框，只说明「你在偷看，酒馆没变」，不该抢眼 */
         .peek-tag { font-size: 11px; color: var(--muted); padding: 1px 2px; }
@@ -897,20 +870,6 @@
         #debuglog .err { color: var(--warn); }
         @media (min-width: 900px) { #debugwrap { left: 240px; } }
 
-        .pane-hint { color: var(--muted); font-size: 12.5px; line-height: 1.6; padding: 6px 2px; }
-        /* [MP] 存档总览·角色卡分组（角色名/聊天文件名 的斜杠前段归堆） */
-        .char-card { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
-        .char-card.cur { border-color: var(--sel); }   /* [MP-美化] 选中态=副撞色 */
-        .char-head { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; background: var(--panel2); }
-        @media (hover: hover) { .char-head:hover { background: var(--panel3); } }
-        .char-head .cc-caret { color: var(--muted); transition: transform .15s; font-size: 11px; }
-        .char-card.open .cc-caret { transform: rotate(90deg); }
-        .char-head .cc-name { font-weight: 600; color: var(--ink); flex: 1; word-break: break-all; }
-        .char-head .cc-badge { color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
-        .char-head .cc-sum { color: var(--muted); font-size: 12px; white-space: nowrap; }
-        /* [MP-美化] 拉屉动画：max-height 顺滑展开收起 */
-        .char-body { overflow: hidden; max-height: 0; opacity: 0; padding: 0 10px; transition: max-height .32s cubic-bezier(.22, 1, .36, 1), opacity .24s ease, padding .32s cubic-bezier(.22, 1, .36, 1); }
-        .char-card.open .char-body { max-height: 1500px; opacity: 1; padding: 8px 10px 4px; }
         /* [MP] 注入落点标记线 */
         /* [MP-美化] 注入标记线（图标已在 JS 里用细星 ✦，此处不加 ::before） */
         /* [MP-美化] 注入落点：默认窄窄一行，蜜脾品牌金明显虚线框，星星和字都金（钉死金色不跟主题跑偏）；点开才展开 */
@@ -948,14 +907,12 @@
         #sidebar { --muted: var(--muted-side); }
         #overlay { position: fixed; inset: 0; background: rgba(var(--shadow-rgb), 0.28); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 20; display: none; }
         #overlay.show { display: block; }
-        .nav-title { font-weight: 600; color: var(--accent); font-size: 18px; padding: 2px 8px 10px; }
         /* [MP-美化] 导航项蜜金左竖线标当前页 */
         .nav-item { text-align: left; width: 100%; background: transparent; border: none; box-shadow: none; border-left: 3px solid transparent; padding: 7px 12px 7px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink); font-size: 15px; transition: background .12s, border-color .12s; }
         .nav-item.active { background: var(--panel2); border-left-color: var(--sel); color: var(--sel); font-weight: 600; }   /* [MP-美化] 选中态=副撞色 */
         @media (hover: hover) { .nav-item:hover:not(:disabled) { background: var(--panel2); } }
         /* [MP-美化] 分隔线加回：整条从侧栏左到右，压在落款行之上 */
         .nav-sep { display: block; height: 1px; margin: 0 -12px; background: var(--accent2); opacity: .5; transform: scaleY(.6); }
-        .nav-cap { font-size: 12px; color: var(--muted); padding: 2px 12px; }
         .nav-spring { flex: 1; }
         .nav-gear { color: var(--muted); }
         /* [MP-美化] 底栏字标重排：齿轮与品牌共一条中线，齿轮回归裸图标、品牌成深金横排字标 */
@@ -974,7 +931,6 @@
         .nav-ver { font-family: ui-monospace, "SF Mono", "Cascadia Code", "DejaVu Sans Mono", Menlo, monospace; font-size: 9px; font-weight: 600; letter-spacing: .3px; line-height: 1; color: var(--accent); opacity: .95; white-space: nowrap; }   /* [MP] 版本号改挂 accent 深蜜金＋透明度提到 .95，原 accent2 .78 在白底隐身 */
         .nav-ver .vp { opacity: .8; font-weight: 500; margin-right: .5px; }
         .nav-item.sub { padding-left: 14px; font-size: 14px; color: var(--muted); }
-        .rf-ico { font-size: 18px; line-height: 1; vertical-align: -2px; }   /* [MP-美化] 刷新符号单独放大 */
         .nav-item.sub.active { color: var(--sel); border-left-color: var(--sel); }
         /* [MP-美化] 工具列抽屉：一张干净下拉卡片，行内高光式菜单 */
         .tools-group { position: relative; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-height: 0; opacity: 0; overflow: hidden; transform: translateY(8px); padding: 5px 5px 11px; border: none; border-radius: 12px; background: var(--panel); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: 0 6px 20px rgba(var(--shadow-rgb), .12); transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s ease, transform .3s cubic-bezier(.22, 1, .36, 1); }
@@ -1213,8 +1169,8 @@
             header { padding-left: 250px; }       /* [MP] 顶栏搬出滚动层后蹭不到那 240px 了，自己给侧栏让位（240 + 原本的 10） */
         }
     </style>
-    <!-- [MP-美化] 提前套用已选外观预设，避免刷新闪回默认色 -->
-    <script>try { var s = localStorage.getItem('mp_skin'); if (s && s !== 'platinum') document.documentElement.setAttribute('data-theme', s); if (localStorage.getItem('mp_glass') === '0') document.documentElement.setAttribute('data-glass', 'off'); var ga = localStorage.getItem('mp_glass_a'); if (ga !== null && ga !== '' && !isNaN(+ga)) document.documentElement.style.setProperty('--wash-a', String((100 - Math.min(100, Math.max(0, +ga))) / 100)); } catch (e) {}</script>
+    <!-- [MP-美化] 提前套用已选外观预设，避免刷新闪回默认色。名单要跟 MP_SKINS 的 id 保持一致：加新皮肤时这里也要添一笔 -->
+    <script>try { var s = localStorage.getItem('mp_skin'); if (s && ['rose', 'letter', 'wisteria', 'robin', 'inkwash', 'nightamber', 'abyss'].indexOf(s) >= 0) document.documentElement.setAttribute('data-theme', s); if (localStorage.getItem('mp_glass') === '0') document.documentElement.setAttribute('data-glass', 'off'); var ga = localStorage.getItem('mp_glass_a'); if (ga !== null && ga !== '' && !isNaN(+ga)) document.documentElement.style.setProperty('--wash-a', String((100 - Math.min(100, Math.max(0, +ga))) / 100)); } catch (e) {}</script>
 </head>
 
 <body>
@@ -1259,7 +1215,7 @@
                 <span class="nb-verline">
                 <!-- [MP] Miel 设计的几何蜂 logo，做底栏字标，跟随主题染色 -->
                 <svg class="brand-logo" viewBox="0 0 1542 1060" fill="currentColor" aria-label="蜜脾" role="img"><path d="M776.3 221.2c-1.6 2-8.6 14.9-42.8 78.3-44.4 82.6-46.7 87-46.3 90.2.2 2.2 4.6 6.4 20.8 20.2 11.3 9.5 22.3 18.7 24.4 20.2l3.9 2.9H815l6.7-5.7c30.4-25.6 40.3-35 40.3-38.1 0-2-81.7-166-84-168.5-.4-.4-1.2-.2-1.7.5"/><path d="M350.9 255.3c-3.6 2.4-6.2 6.7-79.7 129.7-19.5 32.7-36.3 60.9-37.3 62.6-3.1 5.2-2.6 12.8 1.5 19.4 4.6 7.7 21.8 34.7 37.8 59.5 7.4 11.5 29.4 45.7 48.8 76 44.1 68.8 41.8 65.3 44.3 66.7 1.2.6 3.7 1.5 5.7 1.9 3.7.9 7.7.1 68-13.1 17.9-3.9 43.5-9.6 57-12.5 13.5-3 38.8-8.5 56.3-12.4s32.6-7.1 33.6-7.1c.9 0 2.7 1.7 4 3.7 1.2 2.1 8.1 13.7 15.3 25.8 47.3 79.9 69.2 115.7 72.1 117.9 5.4 4.1 9.7 4.6 38.3 4.6 26.8 0 27.1 0 29.1 2.2 1.2 1.3 3.9 8.1 6.2 15.8 6.5 21.9 15 49.2 16.7 53.8 3.4 9.1 4.2 7.4 20.2-44.8 7.4-24.1 7.6-24.6 10.1-25.9 1.2-.7 12-1.1 29.3-1.1 31.2-.1 33.1-.4 39.2-7.2 2.1-2.4 8.4-12 13.9-21.3 8.2-14.1 48.6-81.9 67.9-114.3 2.7-4.5 5.7-8.6 6.6-9.1 1.1-.6 17.8 2.7 50.2 9.9 135.8 30 159 35 163.7 35 8.1 0 10-2 26-27 7.9-12.4 23.6-36.9 34.9-54.5 89-138.5 84-129.9 81.1-138.3-1.2-3.5-17.1-30.3-93.4-157.7-11.2-18.7-21.7-35.2-23.3-36.7-5.3-4.9-7.5-4.7-43.5 2.5-113.6 22.9-176.7 35.8-181.2 37.2-6.7 2-5 .1-67.8 77-27.9 34.1-52.3 63.7-54.2 65.9-6.4 6.9-3.2 6.6-75.3 6.6-53.2 0-65.7-.3-68.3-1.4-4.2-1.8-6.4-4.3-30.8-34.1-11.3-13.8-26.8-32.7-34.4-42-59.6-72.8-57-69.8-63.4-72-2.5-.8-20.3-4.6-39.6-8.5-19.2-3.9-66-13.4-103.9-21.1-37.9-7.6-71-13.9-73.6-13.9-3.2 0-5.8.7-8.1 2.3m60.8 36.1c39.6 8 89.7 18.2 128.1 26 9.5 2 19.1 4 21.2 4.6 3.5 1 6.2 3.7 24.2 25.7 60.7 73.9 72.8 88.8 72.8 89.4 0 .3-5.5 1.2-12.2 1.8-81 7.9-179.7 20.8-191 25-2 .7-1.9.9 1.2 2 10.4 3.6 66.3 9.4 149.5 15.6 11 .8 26.8 2 35 2.6 8.3.6 15.2 1.3 15.4 1.5s-3.2 6.3-7.6 13.6c-41.3 68.5-54.8 90.6-56.7 92.7-4.4 4.9-.6 3.9-103.6 26.6-23.9 5.2-55.9 12.3-71 15.6s-29.5 6.3-32 6.6l-4.6.5-9.1-14.3c-5-7.9-18.6-29.3-30.3-47.4-22.5-34.8-42.6-66.2-64.7-100.9C269 467 263 456.7 263 455.7c0-1.1 23.1-40.3 51.2-87.3 42.9-71.5 51.6-85.4 53.4-85.4 1.2 0 21.1 3.8 44.1 8.4m793.8 36.3c14.7 24.7 29.8 49.7 33.5 55.8 3.7 6 13.1 21.8 21 35 7.8 13.2 16 26.7 18.1 30.1 2.7 4.2 3.7 6.7 3.3 8-.7 1.9-16.2 26.3-59.2 93.4-56.3 87.8-58.4 91-60.3 91-1 0-17-3.3-35.6-7.4s-51.6-11.4-73.3-16.1c-74.3-16.2-93.3-20.5-96.4-22-4.1-2-4.5-2.7-31.6-47.5-29.7-49-37.3-62-36.9-62.4.2-.2 11.2-1.1 24.4-2.1 79-5.4 150.4-12 170.4-15.5 12.1-2.2 14.1-3.4 8.3-4.9-9.8-2.7-61-10.1-99.7-14.6-20.3-2.3-99.5-10.5-101.6-10.5-1.1 0-1.9-.3-1.9-.8 0-.4 7.8-10.2 17.3-21.8 34.5-42.4 71.6-88 73.4-90.3 2-2.5 3.6-2.8 115.3-25.5 20.6-4.2 47-9.6 58.5-12 11.6-2.4 22.2-4.4 23.6-4.5 2.4-.1 4.7 3.3 29.4 44.6m-367 159.2c2.2 1 4.7 2.7 5.7 3.7 2.7 3.1 66.4 109.9 67.7 113.4 1.4 4.2 1.4 13.5 0 16.3-2.1 3.9-60 101-64.2 107.6-6.9 10.7-1.8 10.1-76 10.1-60.6 0-64-.1-67.5-1.9-2-1-4.4-2.7-5.3-3.7-.9-1.1-16.3-26.5-34.3-56.6-35.7-59.7-36.4-61.2-33.5-69.9 1.8-5.5 65.1-111.3 69.1-115.5 1.6-1.7 4.4-3.6 6.1-4.2 2-.6 26.2-1 65.7-1.1 58.6-.1 62.7.1 66.5 1.8"/><path d="M695.5 559.4c-4.9 2.2-8.6 7.1-21.1 27.6-11.5 18.9-11.9 19.6-12.2 26l-.4 6.5 24.6 40.9c13.5 22.5 25.8 42.2 27.3 43.8 5.3 5.5 8.2 5.8 58.3 5.8 50.3 0 53.6-.3 58.2-5.9 4.1-4.8 50-82.2 51-86 1.9-6.7-.4-12.2-13.6-33.6-9.6-15.5-13.3-20.7-16.6-23l-4.2-3-74.1-.2c-60.6-.2-74.8 0-77.2 1.1"/></svg>
-                <span class="nav-ver"><span class="vp">v</span>0.3.2</span>
+                <span class="nav-ver"><span class="vp">v</span>0.4.0</span>
                 </span>
             </span>
         </div>
@@ -1598,7 +1554,8 @@
         //   vault 和酒馆是同源两个标签页，浏览器已经过 basic auth，同源 fetch 自动带 cookie/凭证。
         //   拿 CSRF token → 打服务器接口，全程不依赖酒馆那个活页醒着，手机上就不用切页等桥了。
         async function getCsrf() {
-            const r = await fetch('/csrf-token', { credentials: 'same-origin' });
+            // [MP] cache no-cache：token 每次现取，不吃缓存里过期的旧票
+            const r = await fetch('/csrf-token', { credentials: 'same-origin', cache: 'no-cache' });
             if (!r.ok) throw new Error('拿不到 CSRF token（' + r.status + '），刷新酒馆页看看');
             const d = await r.json();
             return d && d.token;
@@ -1842,8 +1799,7 @@
             const msg = ev && ev.data;
             if (!msg || typeof msg !== 'object') return;
             // [MP] 改名弹窗开着：一律不处理桥消息，避免任何 DOM 改动/焦点扰动把你正在打的键吞掉。
-            //   rename-result 是改名结果，可放行（此时弹窗已关，renameOpen 已复位，这里只是双保险）。
-            if (renameOpen && msg.type !== 'rename-result') return;
+            if (renameOpen) return;
             dlog('收到桥消息: ' + msg.type + (msg.chatKey ? ' [' + msg.chatKey + ']' : ''));
             switch (msg.type) {
                 case 'bridge-online':
@@ -1895,16 +1851,6 @@
                     heartbeat();
                     onRangeText(msg.payload);
                     break;
-                case 'summary':
-                    markBridge(true);
-                    heartbeat();
-                    onSummaryResult(msg.payload);
-                    break;
-                case 'test-result':
-                    markBridge(true);
-                    heartbeat();
-                    onTestResult(msg.payload);
-                    break;
                 case 'injection-result':
                     markBridge(true);
                     heartbeat();
@@ -1931,28 +1877,12 @@
                     heartbeat();
                     await onRevertResult(msg.payload);
                     break;
-                case 'rename-result':
-                    // [MP] 旧路径遗留：改名已改走直连服务器，不再依赖桥回这个包；收到也只当心跳，忽略内容
-                    markBridge(true);
-                    heartbeat();
-                    break;
                 case 'bridge-debug':
                     markBridge(true);
                     heartbeat();
                     mpMark('☆桥探针: ' + (msg.payload && msg.payload.message || ''));
                     break;
                 case 'error':
-                    if (msg.payload && msg.payload.op === 'run-summary') {
-                        // [MP] 只认当前在等那一发的失败回包，僵尸失败直接丢
-                        if (msg.payload.reqId !== genReqId || genReqId === 0) {
-                            dlog('丢弃不匹配的 run-summary 失败回包 reqId=' + msg.payload.reqId + ' 期望=' + genReqId, true);
-                            break;
-                        }
-                        genReqId = 0;
-                        clearGen();
-                        document.getElementById('btn-gen').disabled = false;
-                        document.getElementById('gen-stat').textContent = '生成失败：' + (msg.payload.message || '未知');
-                    }
                     toast('桥报错: ' + (msg.payload && msg.payload.message || '未知'));
                     break;
             }
@@ -2405,7 +2335,7 @@
             if (e.target.value) document.getElementById('s-model').value = e.target.value;
         };
 
-        let testTimer = null, modelsTimer = null;
+        let modelsTimer = null;
 
         // [MP] 桥测试改走前台同源后端（和总结同一条路），不再经会被手机冻住的酒馆标签页
         document.getElementById('btn-test-api').onclick = async () => {
@@ -2415,7 +2345,7 @@
             setApiStatus('busy', '测试中…（前台直发·和总结同一条路·最多20秒）');
             dlog('前台测试 source=' + cfg.source);
             try {
-                const token = await getCsrfToken();
+                const token = await getCsrf();
                 const reply = await vaultSummarizeOnce('', '在吗？随便回一个字。', { ...cfg, maxTokens: 16 }, token, 20000, '桥测试');
                 setApiStatus('ok', '连通 ✓ 模型回复：' + (textPrefix80(reply || '') || '(空)'));
                 dlog('前台测试连通: ' + textPrefix80(reply || ''));
@@ -2427,17 +2357,6 @@
                 document.getElementById('btn-test-api').disabled = false;
             }
         };
-
-        function onTestResult(payload) {
-            // [MP] 保留：万一还有旧桥回 test-result，也不炸
-            if (testTimer) { clearTimeout(testTimer); testTimer = null; }
-            document.getElementById('btn-test-api').disabled = false;
-            if (payload && payload.ok) {
-                setApiStatus('ok', '连通 ✓ 模型回复：' + (textPrefix80(payload.text || '') || '(空)'));
-            } else {
-                setApiStatus('err', '失败 ✗ ' + (payload && payload.message || '未知'));
-            }
-        }
 
         // [MP] 直连测试：vault 直接 fetch 副API，不经桥/酒馆。Clewdr 等放行CORS的反代可成；官方裸端点会被浏览器跨域挡
         function joinUrl(base, path) { return String(base || '').replace(/\/+$/, '') + path; }
@@ -2612,13 +2531,7 @@
         }
 
         // [MP] 网页直连酒馆后端 /api/backends/chat-completions/generate。
-        //      同源 + 浏览器自带 basic auth，只差一个 CSRF token；每次现取，稳。
-        async function getCsrfToken() {
-            const r = await fetch('/csrf-token', { cache: 'no-cache' });
-            if (!r.ok) throw new Error('取CSRF失败 HTTP ' + r.status);
-            const j = await r.json();
-            return j && j.token;
-        }
+        //      同源 + 浏览器自带 basic auth，只差一个 CSRF token（统一走 getCsrf 现取）。
         // 单发：照抄 ChatCompletionService 的请求体（那套已验证能通），带真能掐的超时
         async function vaultSummarizeOnce(sysPrompt, srcText, cfg, token, timeoutMs, tag) {
             const base = String(cfg.apiurl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
@@ -2743,7 +2656,7 @@
         async function vaultSummarize(sysPrompt, srcText, cfg, onProgress) {
             const useStream = cfg && cfg.stream !== false;
             const tries = 3;
-            const token = await getCsrfToken();
+            const token = await getCsrf();
             let lastMsg = '未知';
             for (let i = 0; i < tries; i++) {
                 try {
@@ -2899,6 +2812,20 @@
                 toast('替换失败：' + m);
                 document.getElementById('gen-stat').textContent = '替换失败：' + m;
                 dlog('apply-replace 失败: ' + m, true);
+                // [MP] 撤回点击时的乐观更新：桥没改成，界面不能停在假的「已替换」上
+                if (applyPending && snapshot && Array.isArray(snapshot.messages)) {
+                    const p = applyPending;
+                    (p.hidNow || []).forEach(i => { const mm = snapshot.messages[i]; if (mm) mm.is_system = false; });
+                    const anchor = snapshot.messages[p.re];
+                    if (anchor && p.prevAnchor) {
+                        anchor.mes = p.prevAnchor.mes;
+                        anchor.swipes = p.prevAnchor.swipes;
+                        anchor.swipeId = p.prevAnchor.swipeId;
+                    }
+                    await render();
+                    dlog('已撤回本地乐观更新，界面回到替换前', true);
+                }
+                applyPending = null;
                 return;
             }
             // 标记该卷已替换，并存下还原所需的原文/隐藏楼
@@ -4314,7 +4241,6 @@
 
         // [MP] ============ 对话改名（同步酒馆 + 迁移蜜脾存档） ============
         // 酒馆的 renameChat 只认「当前打开的聊天」，所以只对 ●在线 对话开放。
-        let renamePendingOldKey = null;   // 发改名请求时记下旧 chatKey，回包后据此迁移本地库
         function openRenameModal() {
             if (!currentChatKey) { toast('还没定位到在线对话，改不了名'); return; }
             closeSidebar();
@@ -4349,7 +4275,6 @@
             if (newName === oldName) { toast('新名字和原来一样'); closeRenameModal(); return; }
             if (/[\\/:*?"<>|]/.test(newName)) { toast('名字里别用 \\ / : * ? " < > | 这些符号'); return; }
             const oldKey = currentChatKey;
-            renamePendingOldKey = oldKey;
             document.getElementById('rename-ok').disabled = true;
             closeRenameModal();
             toast('正在改名……', 0);
@@ -4383,7 +4308,6 @@
                 // ④ 迁本地库 + 刷 UI
                 await onRenameLocalDone(oldKey, charName, finalName, cardOk);
             } catch (e) {
-                renamePendingOldKey = null;
                 const okBtn = document.getElementById('rename-ok');
                 if (okBtn) okBtn.disabled = false;
                 toast('改名失败：' + (e && e.message || e));
@@ -4408,7 +4332,6 @@
         }
         // [MP] 服务器改名成功后：迁本地三库 + 把 vault 内的 chatKey 切到新名 + 刷 UI
         async function onRenameLocalDone(oldKey, charName, finalName, cardOk) {
-            renamePendingOldKey = null;
             const okBtn = document.getElementById('rename-ok');
             if (okBtn) okBtn.disabled = false;
             const newKey = charName + '/' + finalName;
@@ -4510,7 +4433,6 @@
             } catch (e) { dlog('恢复上次在线对话失败: ' + e, true); }
             // [MP] 直连问服务器酒馆此刻到底开着哪个对话，映射并跟过去——不靠桥（首开/桥冻结时也能对齐真实在线对话）
             syncToLive({ follow: true }).catch(() => { });
-            post('cancel-inflight'); // [MP] 先掐掉上次刷新前挂着的僵尸副API请求，再开工
             post('ping');
             dlog('已发ping，等桥应答');
             heartbeat();

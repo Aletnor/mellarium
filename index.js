@@ -1,7 +1,7 @@
 // [MP] 蜜脾 Mellarium · 桥(bridge) — 无界面
 // 职责：监听酒馆事件广播当前聊天状态；接收主页面(vault)指令并执行。
 // 通信：BroadcastChannel('mellarium')，消息一律 {type, chatKey, payload}。
-// 第1期只实现：chat-changed / chat-dirty 广播 + get-snapshot / ping 应答。
+// 桥只干秒回的短活（快照/区间正文/替换还原/注入/改名对齐）；长请求（总结/测试）一律由 vault 前台同源直发。
 
 (function () {
     'use strict';
@@ -148,94 +148,6 @@
             parts.push('【' + i + '楼·' + who + '】\n' + txt);
         }
         return parts.join('\n\n');
-    }
-
-    // [MP] 所有在飞的副API请求控制器；vault 刷新时发 cancel-inflight 一把掐光，杜绝「上次刷新前卡住的僵尸请求」。
-    const inflight = new Set();
-
-    // [MP] 副API请求 — 改走酒馆核心 ChatCompletionService（无状态裸 fetch，经后端同源代理绕 CORS）。
-    // 换掉旧的 TavernHelper.generateRaw：那条带 CG/停止按钮/is_send_press 状态，第一发占住不还，
-    // 第二发（连测试也算）死等状态释放→240秒超时。ChatCompletionService 一发一清、天生可重入。
-    // key 走 openai 源的 reverse_proxy(地址)+proxy_password(钥匙)，可 per-call 带钥匙，无需存档密钥。
-    async function callSubApi(apiConfig, systemPrompt, userText, opts) {
-        opts = opts || {};
-        const label = opts.label || '副API';
-        // [MP] 桥侧超时：ChatCompletionService.sendRequest 对 signal=null 会兜一个「永不 abort 的新 signal」，
-        //      挂起的 fetch 永远不回、连接不释放，堆成僵尸把后续请求也拖死。这里塞一个真能掐的 AbortController。
-        //      成功的总结日志里最慢 52 秒，超过就是上游卡死了，掐掉自动换一发（retries 次）。
-        const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 80000;
-        const retries = Number(opts.retries) >= 0 ? Number(opts.retries) : 0;
-        const c = ctx();
-        const svc = c && c.ChatCompletionService;
-        if (!svc || typeof svc.processRequest !== 'function')
-            throw new Error('ChatCompletionService 不可用（酒馆版本过旧或上下文未就绪）');
-        if (!apiConfig || !apiConfig.apiurl || !apiConfig.model)
-            throw new Error('副API配置缺失（apiurl / model）');
-        // [MP] 归一 base：去尾斜杠、去掉可能带上的 /chat/completions，reverse_proxy 只要到 /v1 这层
-        let base = String(apiConfig.apiurl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
-        const messages = [
-            { role: 'system', content: String(systemPrompt || '') },
-            { role: 'user', content: String(userText || '') },
-        ];
-        const requestData = {
-            chat_completion_source: 'openai',   // openai 源 + reverse_proxy 才能 per-call 带 key
-            reverse_proxy: base,
-            proxy_password: apiConfig.key || '',
-            model: apiConfig.model,
-            messages: messages,
-            stream: false,
-            max_tokens: Number(apiConfig.maxTokens) > 0 ? Number(apiConfig.maxTokens) : 8192,
-        };
-
-        // [MP] 单发：带真 AbortController + 超时；超时抛特制 TIMEOUT 标记让外层决定要不要重试
-        async function attempt(attemptNo) {
-            const controller = new AbortController();
-            inflight.add(controller);
-            let timedOut = false;
-            const timer = setTimeout(function () { timedOut = true; try { controller.abort(); } catch (e) {} }, timeoutMs);
-            const t0 = Date.now();
-            const tag = label + (retries > 0 ? ' 第' + attemptNo + '发' : '');
-            try { send('bridge-debug', { message: tag + ' 请求已发出（源文' + String(userText || '').length + '字，上限' + Math.round(timeoutMs / 1000) + '秒）' }); } catch (e) {}
-            let res;
-            try {
-                res = await svc.processRequest(requestData, {}, true, controller.signal);
-            } catch (e) {
-                const dt = ((Date.now() - t0) / 1000).toFixed(1);
-                if (timedOut || (e && (e.name === 'AbortError' || /abort/i.test(String(e && e.message || ''))))) {
-                    try { send('bridge-debug', { message: tag + ' 超时 ' + dt + '秒，已掐断连接' }); } catch (e2) {}
-                    const te = new Error('TIMEOUT'); te._mpTimeout = true; throw te;
-                }
-                throw e;
-            } finally {
-                clearTimeout(timer);
-                inflight.delete(controller);
-            }
-            let raw = '';
-            if (typeof res === 'string') raw = res;
-            else if (res && typeof res === 'object') raw = res.content || res.reasoning || '';
-            try {
-                send('bridge-debug', {
-                    message: tag + ' 返回 耗时' + ((Date.now() - t0) / 1000).toFixed(1) + '秒 长度=' + (raw ? raw.length : 0)
-                        + ' 预览=' + String(raw || '').slice(0, 160),
-                });
-            } catch (e) { /* 探针失败不致命 */ }
-            return raw;
-        }
-
-        for (let i = 0; i <= retries; i++) {
-            try {
-                return await attempt(i + 1);
-            } catch (e) {
-                if (e && e._mpTimeout) {
-                    if (i < retries) {
-                        try { send('bridge-debug', { message: label + ' 第' + (i + 1) + '发卡死，自动换第' + (i + 2) + '发' }); } catch (e2) {}
-                        continue;
-                    }
-                    throw new Error('副API连着' + (retries + 1) + '发都在' + Math.round(timeoutMs / 1000) + '秒内没回（上游卡死）。源文 ' + String(userText || '').length + ' 字，缩小区间或换快一点的模型再试。');
-                }
-                throw e;
-            }
-        }
     }
 
     // [MP] 照抄酒馆 ensureSwipes 逻辑（未在 getContext 暴露）：规整 swipes/swipe_id/swipe_info 三件套
@@ -401,14 +313,6 @@
             case 'ping':
                 send('pong');
                 break;
-            case 'cancel-inflight': {
-                // [MP] vault 刷新/重开时调用：掐掉所有还挂着的副API请求，连接释放、不留僵尸拖累下一发
-                let n = 0;
-                inflight.forEach(function (ctrl) { try { ctrl.abort(); n++; } catch (e) {} });
-                inflight.clear();
-                if (n > 0) { try { send('bridge-debug', { message: '已掐断 ' + n + ' 个残留副API请求（vault重开清场）' }); } catch (e) {} }
-                break;
-            }
             case 'get-snapshot':
                 // [MP] 先把正则引擎等到位再造快照。酒馆刚加载完那几百毫秒里 import 还没落地，
                 // 这时候直接造，快照里 regexReady 就是 false，蜜脾那边净版钮点了没反应。
@@ -435,20 +339,6 @@
                     } catch (e) {
                         console.error(TAG, 'get-models failed', e);
                         send('models-result', { ok: false, message: String(e && e.message || e) });
-                    }
-                })();
-                break;
-            }
-            case 'test-api': {
-                // [MP] payload: {apiConfig} — 发一句最短请求探连通，不入库
-                const tp = msg.payload || {};
-                (async function () {
-                    try {
-                        const reply = await callSubApi(tp.apiConfig, '你是连通测试。只回复两个字：在。', '在吗', { label: '桥连接测试', timeoutMs: 30000 });
-                        send('test-result', { ok: true, text: String(reply || '').trim() });
-                    } catch (e) {
-                        console.error(TAG, 'test-api failed', e);
-                        send('test-result', { ok: false, message: String(e && e.message || e) });
                     }
                 })();
                 break;
@@ -484,29 +374,6 @@
                     console.error(TAG, 'get-range-text failed', e);
                     send('range-text', { reqId: gp.reqId, ok: false, message: String(e && e.message || e) });
                 }
-                break;
-            }
-            case 'run-summary': {
-                // [MP] payload: {rangeStart, rangeEnd, apiConfig, summaryPrompt}
-                const p = msg.payload || {};
-                (async function () {
-                    try {
-                        const src = collectRangeText(p.rangeStart, p.rangeEnd);
-                        const summary = await callSubApi(p.apiConfig, p.summaryPrompt, src, { label: '总结', timeoutMs: 80000, retries: 1 });
-                        if (!summary || !String(summary).trim()) {
-                            send('error', {
-                                op: 'run-summary', reqId: p.reqId,
-                                message: '副API返回空内容（读到区间原文 ' + src.length + ' 字，但模型没吐正文）。'
-                                    + '常见原因：模型拒绝/过滤了内容，或用的是思考模型把正文塞进了思考字段。换个非思考模型或换模型试试。',
-                            });
-                            return;
-                        }
-                        send('summary', { reqId: p.reqId, rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, text: summary });
-                    } catch (e) {
-                        console.error(TAG, 'run-summary failed', e);
-                        send('error', { op: 'run-summary', reqId: p.reqId, message: String(e && e.message || e) });
-                    }
-                })();
                 break;
             }
             case 'apply-replace': {
@@ -569,40 +436,6 @@
                 })();
                 break;
             }
-            case 'rename-chat': {
-                // [MP] payload: {oldName, newName} — oldName/newName 均为聊天文件名（不带 .jsonl）
-                //   酒馆 renameChat 只认「当前打开的聊天」（内部用 this_chid/selected_group），
-                //   所以只能改在线对话；oldName 仅作安全校验，真源以 getCurrentChatId() 为准。
-                const rp = msg.payload || {};
-                (async function () {
-                    try {
-                        const c = ctx();
-                        if (!c) throw new Error('酒馆上下文未就绪');
-                        const before = c.getCurrentChatId ? c.getCurrentChatId() : null;
-                        if (!before) throw new Error('桥没定位到当前聊天，先在酒馆打开一个对话');
-                        if (rp.oldName && String(rp.oldName) !== String(before)) {
-                            send('rename-result', { ok: false, message: '要改名的不是酒馆当前打开的那个对话，先在酒馆里打开它再改' });
-                            return;
-                        }
-                        const newName = String(rp.newName == null ? '' : rp.newName).trim();
-                        if (!newName) { send('rename-result', { ok: false, message: '新名字不能为空' }); return; }
-                        if (newName === String(before)) { send('rename-result', { ok: false, message: '新名字和原来一样' }); return; }
-                        if (typeof c.renameChat !== 'function') throw new Error('酒馆没提供 renameChat（版本不符？）');
-                        // renameChat 内部自行 try/catch（失败弹酒馆的 popup 不抛错），故靠改名前后的 chatId 变化判定成败
-                        await c.renameChat(before, newName);
-                        const after = (ctx() && ctx().getCurrentChatId) ? ctx().getCurrentChatId() : before;
-                        if (after && String(after) !== String(before)) {
-                            send('rename-result', { ok: true, oldName: before, newName: after });
-                        } else {
-                            send('rename-result', { ok: false, message: '酒馆没接受这个名字（可能含非法字符/重名/被清洗）。当前名仍是「' + before + '」' });
-                        }
-                    } catch (e) {
-                        console.error(TAG, 'rename-chat failed', e);
-                        send('rename-result', { ok: false, message: String(e && e.message || e) });
-                    }
-                })();
-                break;
-            }
             case 'rename-reconcile': {
                 // [MP] vault 已经直连服务器把 jsonl 文件＋角色卡指针改好了，这里只负责「把酒馆这个活页里的内存态对齐」：
                 //   手机后台冻结时这条消息在队列里等着，等酒馆页被切到前台解冻，立刻执行 → 内存 characters[chid].chat 改成
@@ -622,6 +455,8 @@
                         try { send('bridge-debug', { message: '改名内存态已对齐：' + rp.oldName + ' → ' + rp.newName }); } catch (e) {}
                     } catch (e) {
                         console.error(TAG, 'rename-reconcile failed', e);
+                        // [MP] 手机没控制台：对齐失败得让蜜脾屏幕上看得见，否则酒馆内存态还挂着旧名却无人知晓
+                        try { send('bridge-debug', { message: '改名内存态对齐失败：' + String(e && e.message || e) }); } catch (e2) { }
                     }
                 })();
                 break;
@@ -759,6 +594,8 @@
                 console.log(TAG, '斜杠命令 /jump 已注册');
             } catch (e) {
                 console.error(TAG, '/jump 注册失败', e);
+                // [MP] 手机没控制台：注册失败送到蜜脾屏内日志，别让 /jump 无声失踪
+                try { send('bridge-debug', { message: '/jump 斜杠命令注册失败：' + String(e && e.message || e) }); } catch (e2) { }
             }
         }
 
