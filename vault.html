@@ -1083,10 +1083,10 @@
            勾＝存下，叉＝把这次的改动全丢掉退回原样。
            以前是改完就自动存，一点后悔的余地都没有：手机上手指一蹭就把提示词毁了，
            而且毁完你连原来写的是什么都不知道，只能重打一遍。 */
-        /* 图标绝对定位吸在标题行右端，一个像素的正文空间都不占 */
-        .prompt-fold { position: relative; }
-        .prompt-fold[open] > summary { padding-right: 62px; }
-        .pf-tools { position: absolute; top: -3px; right: 0; display: flex; gap: 6px; }
+        /* 图标骑在框子右上角：绝对定位压着上边框，不占一格布局空间。
+           标题行那条路走不通——手机窄屏标题折成两行，图标就跟标题块对不齐了。 */
+        .pf-wrap { position: relative; }
+        .pf-tools { position: absolute; top: -14px; right: 10px; z-index: 2; display: flex; gap: 6px; }
         .pf-tools button {
             width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center;
             border-radius: 8px; border: 1px solid var(--glass-line);
@@ -1365,8 +1365,7 @@
                     <div class="pane-meta"><span class="floor-meta" id="codex-meta"></span></div>
                     <details class="prompt-fold top">
                         <summary>档案更新提示词（系统·点开查看，要改先点右上角铅笔）</summary>
-                        <div class="pf-tools" id="pf-tools-codex"></div>
-                        <div class="pf-wrap"><textarea id="s-codex-prompt" rows="6" readonly></textarea></div>
+                        <div class="pf-wrap"><div class="pf-tools" id="pf-tools-codex"></div><textarea id="s-codex-prompt" rows="6" readonly></textarea></div>
                     </details>
                     <div class="srow inline">
                         <label>起始楼 <input type="number" id="codex-start" min="0" class="num-mini" /></label>
@@ -1401,8 +1400,7 @@
                     <div class="pane-meta"><span class="floor-meta" id="lastvol"></span></div>
                     <details class="prompt-fold top">
                         <summary>总结提示词（系统·点开查看，要改先点右上角铅笔）</summary>
-                        <div class="pf-tools" id="pf-tools-sum"></div>
-                        <div class="pf-wrap"><textarea id="s-prompt" rows="6" readonly></textarea></div>
+                        <div class="pf-wrap"><div class="pf-tools" id="pf-tools-sum"></div><textarea id="s-prompt" rows="6" readonly></textarea></div>
                     </details>
                     <div class="summary-work">
                         <div class="srow inline">
@@ -2375,7 +2373,8 @@
                 const b = document.createElement('button');
                 b.type = 'button'; b.innerHTML = icon; b.title = title;
                 if (cls) b.className = cls;
-                b.onclick = fn;
+                // [MP] 按钮长在 <summary> 里，不拦住的话点一下会顺手把折叠框收起来
+                b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); fn(); };
                 tools.appendChild(b);
             };
             const lock = () => {
