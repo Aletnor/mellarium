@@ -667,6 +667,7 @@
 
         .sum-item .meta { color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .sum-item .meta button { font-size: 12px; padding: 3px 8px; }
+        .lv-fill { font-size: 12px; padding: 3px 8px; margin-left: 4px; }
         .sum-item .applied { color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
         .sum-detail { margin-top: 6px; }
         .sum-detail > summary { cursor: pointer; color: var(--muted); list-style: revert; }
@@ -1075,6 +1076,7 @@
         /* [MP] ========== 侧边栏角色树 ========== */
         .char-tree { overflow-y: auto; }
         .char-tree .empty { padding: 12px 14px; font-size: 13px; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+        .ct-hint { padding: 8px 14px 4px; font-size: 12px; color: var(--muted); opacity: .75; }
         .ct-card { margin: 0 0 6px; }
         /* [MP-美化] 角色卡=磨砂玻璃浮钮：半透明白底 + 磨砂 + 柔阴影 + 玻璃高光边 */
         .ct-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 7px 13px; cursor: pointer; border: none; border-radius: var(--radius-sm); background: rgba(var(--accent-rgb), 0.17); box-shadow: none; transition: background .15s, transform .12s; }
@@ -1624,6 +1626,9 @@
         //   opts.follow 强制跟随。桥没写过（null）时退回按现有 currentChatKey 重读（老行为，至少刷新当前）。
         async function syncToLive(opts) {
             opts = opts || {};
+            // [MP] 改名弹窗开着时冻结一切跟随：桥消息通道在下面挡了，但 storage 事件和切回前台
+            //   也会走到这里，一样能 render() 改 DOM、打断正在打的字——护栏必须两头都挡
+            if (renameOpen) return false;
             const liveKey = readLiveKey();
             if (liveKey === null) return pullSnapshotDirect(opts).catch(() => false);
             if (liveKey === '') { clearLive(); return false; }
@@ -1752,6 +1757,7 @@
 
         function markBridge(on) {
             bridgeOnline = on;
+            if (on && pingRetryTimer) { clearTimeout(pingRetryTimer); pingRetryTimer = null; } // [MP] 桥醒了就停掉慢速重连
             document.getElementById('bridgedot').className = 'dot ' + (on ? 'on' : 'off');
             document.getElementById('bridgetext').textContent = on ? '桥在线' : '桥离线';
             // [MP] 刷新已改直连服务器，不再依赖桥，任何时候都可点（桥离线也能读盘）
@@ -1837,6 +1843,8 @@
                 case 'snapshot':
                     markBridge(true);
                     heartbeat();
+                    // [MP] 手动刷新退回问桥的那发到货了：收掉「改问桥…」的常驻提示
+                    if (refreshWaitTimer) { clearTimeout(refreshWaitTimer); refreshWaitTimer = null; toast('已刷新'); }
                     if (msg.payload) {
                         mpMark('★4 兜底快照回来了（大聊天深拷贝＋跨iframe序列化耗时看这段）');
                         // [MP] quiet=桥自己报的变化，你可能正翻着别的存档，别硬把界面拽到在线对话去
@@ -1883,23 +1891,41 @@
                     mpMark('☆桥探针: ' + (msg.payload && msg.payload.message || ''));
                     break;
                 case 'error':
-                    toast('桥报错: ' + (msg.payload && msg.payload.message || '未知'));
+                    toast('桥报错：' + (msg.payload && msg.payload.message || '未知'));
                     break;
             }
         };
 
-        // [MP] 心跳：收到桥任何消息刷新计时；超时判离线并重新ping
+        // [MP] 心跳：收到桥任何消息刷新计时；超时判离线，转入每5秒慢速重连ping。
+        //   以前只补发一次 ping：那发要是丢了，桥点就永远红着，没有任何重连入口，只能整页刷新。
+        let pingRetryTimer = null;
+        function pingRetry() {
+            if (bridgeOnline) return;
+            post('ping');
+            if (pingRetryTimer) clearTimeout(pingRetryTimer);
+            pingRetryTimer = setTimeout(pingRetry, 5000);
+        }
         function heartbeat() {
             if (bridgeTimer) clearTimeout(bridgeTimer);
-            bridgeTimer = setTimeout(() => { markBridge(false); dlog('桥4秒无消息，判离线并重新ping', true); post('ping'); }, 4000);
+            bridgeTimer = setTimeout(() => { markBridge(false); dlog('桥4秒无消息，判离线，转入每5秒重连ping', true); pingRetry(); }, 4000);
         }
 
-
-        // [MP] 手动刷新/点提示：直连服务器重读当前对话（不再依赖桥应答）；直读失败再退回问桥要
+        // [MP] 手动刷新/点提示：直连服务器重读当前对话（不再依赖桥应答）；直读失败再退回问桥要。
+        //   全程给反馈：以前直读定位不到就静默转桥、桥再冻着就彻底没声，点了等于没点。
+        let refreshWaitTimer = null;
         async function manualRefresh() {
+            toast('刷新中…', 0);
             try {
                 const ok = await pullSnapshotDirect({ follow: true });
-                if (!ok) post('get-snapshot'); // 没定位到对话，退回让桥告诉我们是哪个
+                if (ok) { toast('已刷新'); return; }
+                if (!bridgeOnline) { toast('定位不到当前对话，桥也离线：到酒馆开个对话再回来'); return; }
+                toast('定位不到当前对话，改问桥…', 0);
+                if (refreshWaitTimer) clearTimeout(refreshWaitTimer);
+                refreshWaitTimer = setTimeout(() => {
+                    refreshWaitTimer = null;
+                    toast('桥也没回：酒馆标签页可能被手机冻结，切过去停一下再回来');
+                }, 5000);
+                post('get-snapshot'); // 没定位到对话，退回让桥告诉我们是哪个
             } catch (e) {
                 toast('刷新失败：' + (e && e.message || e));
                 post('get-snapshot');
@@ -1934,6 +1960,11 @@
             if (now - lastCleanUpgrade < 10000) return;
             lastCleanUpgrade = now;
             quietSnapPending = true;   // 静默：别把界面从你正看的存档硬拽到在线对话去
+            // [MP] 桥装死时这个标志不能一直挂着：不清的话，之后手动刷新等本该 follow 的快照
+            //   会被误判成 quiet、follow 被吞。5秒没等到就只清标志（不像 requestSnapshotQuiet 那样
+            //   转直连读盘——那条兜底会反过来再调这里，绕成死圈，见上面注释）。
+            if (quietSnapTimer) clearTimeout(quietSnapTimer);
+            quietSnapTimer = setTimeout(() => { quietSnapTimer = null; quietSnapPending = false; }, 5000);
             post('get-snapshot');
         }
 
@@ -2271,6 +2302,8 @@
         document.getElementById('btn-preset-del').onclick = async () => {
             if (apiPresets.length <= 1) { toast('至少保留一个地址'); return; }
             const name = apiPresets[activeIdx].name;
+            // [MP] 一键就删整组配置（含 key）太狠了，误触一下 key 就得重新翻出来抄——删背景图都有确认，这里更该有
+            if (!confirm(`删除地址「${name}」？\n它存的 apiurl、key、模型等配置会一并删掉，不可恢复。`)) return;
             apiPresets.splice(activeIdx, 1);
             if (activeIdx >= apiPresets.length) activeIdx = apiPresets.length - 1;
             renderPresetSelect();
@@ -2439,6 +2472,7 @@
         let genReqId = 0;    // [MP] 当前在等的那一发的号；回包 reqId 不等于它就丢（防僵尸请求诈尸）
         let genPhase = null; // [MP] 'range'=正问桥要原文 / 'gen'=网页自己在发总结请求
         let genCfg = null, genPrompt = ''; // [MP] 暂存本次生成的副API配置与提示词，等原文回来第二阶段用
+        let genChatKey = null; // [MP] 点「生成」那一刻锁定的对话 key，结果入库只认它，防生成期间切对话串号
         function clearGen() {
             if (genTimer) { clearTimeout(genTimer); genTimer = null; }
             if (genTick) { clearInterval(genTick); genTick = null; }
@@ -2447,7 +2481,13 @@
         // [MP] 生成两阶段：①问桥要区间原文（秒回的短活，桥就算在后台也顶得住）②网页自己直连副API发总结
         //      长请求留在前台网页发，手机切来切去都不会把它冻死；桥只干读原文这种一秒钟的活。
         document.getElementById('btn-gen').onclick = () => {
-            if (!selectedIsLive()) { toast('这是历史存档对话，只读。要生成总结请在酒馆里打开它'); return; }
+            if (!selectedIsLive()) {
+                // [MP] 「没开对话」和「翻着存档」是两回事，别对着空气说"这是历史存档"
+                toast(selectedChatKey
+                    ? '这是历史存档对话，只读。要生成总结请在酒馆里打开它'
+                    : '还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
+                return;
+            }
             if (genReqId !== 0) { toast('已有一段在生成中，等它回来或超时再点'); return; } // [MP] 在飞就别再发
             if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('sum-start').value, 10);
@@ -2458,6 +2498,7 @@
             const reqId = ++genReqSeq;
             genReqId = reqId;                 // [MP] 记下这一发的号，只认它的回包
             genPhase = 'range';               // [MP] 第一阶段：等桥给原文
+            genChatKey = currentChatKey;      // [MP] 锁定这一发属于哪个对话
             genCfg = cfg;
             genPrompt = document.getElementById('s-prompt').value || DEFAULT_SUMMARY_PROMPT;
             document.getElementById('btn-gen').disabled = true;
@@ -2526,7 +2567,7 @@
                 document.getElementById('btn-gen').disabled = false;
                 document.getElementById('gen-stat').textContent = '生成失败：' + (e && e.message || e);
                 dlog('网页直发总结失败: ' + (e && e.message || e), true);
-                toast('生成失败: ' + (e && e.message || e));
+                toast('生成失败：' + (e && e.message || e));
             }
         }
 
@@ -2692,7 +2733,7 @@
                 dlog('summary 为空白', true);
                 return;
             }
-            pendingSummary = { rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text: payload.text };
+            pendingSummary = { chatKey: genChatKey, rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text: payload.text };
             document.getElementById('sum-result').value = payload.text;
             document.getElementById('gen-stat').textContent = `已生成 ${payload.rangeStart}~${payload.rangeEnd}，可编辑`;
             document.getElementById('btn-save-summary').disabled = false;
@@ -2707,9 +2748,11 @@
             return rows;
         }
 
-        // [MP] 入库一条总结，返回 {id, volume}；applied 标记是否已执行替换
-        async function saveSummaryRow(text, rs, re, applied) {
-            const key = selectedChatKey || currentChatKey;   // [MP] 存档对话也能手动入库
+        // [MP] 入库一条总结，返回 {id, volume}；applied 标记是否已执行替换。
+        //   key 必须由调用方传：生成类调用要用「点生成那一刻」锁下的 key，
+        //   不能存的时候现读 selectedChatKey——生成几十秒里你切去翻别的对话，A 的总结就会入到 B 的库里。
+        async function saveSummaryRow(key, text, rs, re, applied) {
+            if (!key) throw new Error('未选择对话');
             const existing = await summariesForChat(key);
             const volume = (existing.reduce((mx, r) => Math.max(mx, r.volume || 0), 0)) + 1;
             const id = await idbReq(tx('summaries', 'readwrite').add({
@@ -2730,13 +2773,16 @@
             if (saveBusy) return;
             saveBusy = true;
             try {
-                if (!selectedChatKey) { toast('未选择对话'); return; }
+                // [MP] 生成来的总结认「点生成时锁的 key」；手打的总结才认当前选中的对话
+                const key = (pendingSummary && pendingSummary.chatKey) || selectedChatKey;
+                if (!key) { toast('未选择对话'); return; }
                 const text = document.getElementById('sum-result').value.trim();
                 if (!text) { toast('总结为空'); return; }
                 const rs = parseInt(document.getElementById('sum-start').value, 10);
                 const re = parseInt(document.getElementById('sum-end').value, 10);
-                const { volume } = await saveSummaryRow(text, rs, re, false);
-                toast(`已入库 第${volume}卷`);
+                const { volume } = await saveSummaryRow(key, text, rs, re, false);
+                if (key !== selectedChatKey) toast(`已入库 第${volume}卷（存回生成时的对话：${splitChatKey(key).chat || key}）`);
+                else toast(`已入库 第${volume}卷`);
                 // [MP] 入库后清空总结框＋待存态，界面自己说话，不用盯着猜更没更新
                 document.getElementById('sum-result').value = '';
                 pendingSummary = null;
@@ -2755,83 +2801,124 @@
         });
 
         // [MP] 保存并执行替换隐藏：入库→发桥改真实存档→回执后标记 applied 并刷新
-        let applyPending = null; // {id, volume, rs, re}
+        let applyPending = null; // {id, volume, rs, re, prevAnchor, hidNow, fromBox}
+        let applyTimedOut = null; // [MP] 超时回滚后记住那一发 {id, volume, fromBox}，桥迟到的成功回执还能对上账
+        let applyTimer = null;
         let applyBusy = false; // [MP] 防手机连点重入：进函数先上锁
+
+        // [MP] 两条入口（总结框按钮/历史卡片）共用一份确认文案，改一处即改全部
+        function applyConfirmText(volume, rs, re) {
+            return `确认执行替换隐藏？${volume != null ? `（第 ${volume} 卷）` : ''}\n\n` +
+                `· ${rs}~${re} 楼将折叠为一条总结\n` +
+                `· 总结写成第 ${re} 楼的新版本\n` +
+                `· ${rs}~${re - 1} 楼将被隐藏，不再进提示词\n\n` +
+                `会改动酒馆真实存档，但可逆：随时点这一卷的【还原正文】即可一键撤销。`;
+        }
+
+        // [MP] 撤回点击时的乐观更新：桥没改成（回执失败或压根不回），界面不能停在假的「已替换」上
+        async function rollbackApplyOptimistic() {
+            if (!applyPending || !snapshot || !Array.isArray(snapshot.messages)) return;
+            const p = applyPending;
+            (p.hidNow || []).forEach(i => { const mm = snapshot.messages[i]; if (mm) mm.is_system = false; });
+            const anchor = snapshot.messages[p.re];
+            if (anchor && p.prevAnchor) {
+                anchor.mes = p.prevAnchor.mes;
+                anchor.swipes = p.prevAnchor.swipes;
+                anchor.swipeId = p.prevAnchor.swipeId;
+            }
+            await render();
+            dlog('已撤回本地乐观更新，界面回到替换前', true);
+        }
+
+        // [MP] 替换隐藏的统一执行体：乐观渲染＋回滚记录＋20秒超时兜底。
+        //   以前总结框和历史卡片各写一套，卡片那套没乐观更新没超时，桥一冻就静默死；现在一份代码两边用。
+        async function startApplyReplace(id, volume, rs, re, text, fromBox) {
+            document.getElementById('btn-apply').disabled = true;
+            document.getElementById('gen-stat').textContent = `执行替换隐藏中… 第${volume}卷`;
+            mpStart(`发 apply-replace ${rs}~${re} 第${volume}卷`);
+            // [MP] 点击即刻本地刷新：用手里已有的数据当场把界面画成隐藏后的样子，
+            // 不等桥回执。手机浏览器会把后台标签事件循环节流到分钟级，等桥回执＝等分钟。
+            let prevAnchor = null, hidNow = [];
+            if (snapshot && Array.isArray(snapshot.messages)) {
+                for (let i = rs; i <= re - 1; i++) {
+                    const mm = snapshot.messages[i];
+                    if (mm && !mm.is_system) { mm.is_system = true; hidNow.push(i); }
+                }
+                const anchor = snapshot.messages[re];
+                if (anchor) {
+                    if (!Array.isArray(anchor.swipes)) anchor.swipes = [anchor.mes || ''];
+                    prevAnchor = { mes: anchor.mes, swipes: anchor.swipes.slice(), swipeId: anchor.swipeId };
+                    const summaryMes = `【前文剧情总结·第${volume}卷】\n` + text;
+                    anchor.swipes.push(summaryMes);
+                    anchor.swipeId = anchor.swipes.length - 1;
+                    anchor.mes = summaryMes;
+                }
+                await render();
+                mpMark('★本地即刻render完成（点击即变，不等桥）');
+            }
+            applyPending = { id, volume, rs, re, prevAnchor, hidNow, fromBox: !!fromBox };
+            applyTimedOut = null;
+            if (applyTimer) clearTimeout(applyTimer);
+            // [MP] 改真实存档这步以前裸奔：桥被安卓冻住不回执，界面就永远停在假的「已替换」。
+            //   20秒不回执→回滚界面＋放开按钮＋说清楚存档没动；桥迟到的成功回执由 applyTimedOut 兜着对账。
+            applyTimer = setTimeout(async () => {
+                applyTimer = null;
+                if (!applyPending || applyPending.id !== id) return;
+                await rollbackApplyOptimistic();
+                applyTimedOut = { id, volume, fromBox: applyPending.fromBox };
+                applyPending = null;
+                document.getElementById('btn-apply').disabled = false;
+                document.getElementById('gen-stat').textContent = '替换没执行：桥20秒没回执（酒馆标签页可能被手机冻结）。界面已撤回、存档没动；切回酒馆停一下再重试。';
+                toast('替换没执行：桥没回执，界面已撤回');
+                dlog('apply-replace 20秒无回执，已回滚乐观更新', true);
+            }, 20000);
+            post('apply-replace', { rangeStart: rs, rangeEnd: re, summaryText: text, volume });
+        }
+
         document.getElementById('btn-apply').onclick = async () => {
             if (applyBusy) return;
             applyBusy = true;
             try {
+                if (applyPending) { toast('上一发替换还在等桥回执'); return; }
                 if (!bridgeOnline) { toast('桥离线，无法替换'); return; }
                 if (!currentChatKey) { toast('未定位聊天'); return; }
+                // [MP] 生成期间酒馆那边换了对话：总结是 A 的，此刻在线的是 B，绝不能把 A 的总结折进 B 的楼层
+                if (pendingSummary && pendingSummary.chatKey && pendingSummary.chatKey !== currentChatKey) {
+                    toast('这段总结属于「' + (splitChatKey(pendingSummary.chatKey).chat || pendingSummary.chatKey) + '」，和酒馆当前对话对不上。回酒馆打开它再执行，或只点「仅保存入库」');
+                    return;
+                }
                 const text = document.getElementById('sum-result').value.trim();
                 if (!text) { toast('总结为空，先生成'); return; }
                 const rs = parseInt(document.getElementById('sum-start').value, 10);
                 const re = parseInt(document.getElementById('sum-end').value, 10);
                 if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
-                if (!confirm(
-                    `确认执行替换隐藏？\n\n` +
-                    `· ${rs}~${re} 楼将折叠为一条总结\n` +
-                    `· 总结写成第 ${re} 楼的新版本\n` +
-                    `· ${rs}~${re - 1} 楼将被隐藏，不再进提示词\n\n` +
-                    `会改动酒馆真实存档，但可逆：随时点这一卷的【还原正文】即可一键撤销。`)) return;
-                const { id, volume } = await saveSummaryRow(text, rs, re, false);
-                document.getElementById('btn-apply').disabled = true;
-                document.getElementById('gen-stat').textContent = `执行替换隐藏中… 第${volume}卷`;
-                mpStart(`发 apply-replace ${rs}~${re} 第${volume}卷`);
-                // [MP] 点击即刻本地刷新：用手里已有的数据当场把界面画成隐藏后的样子，
-                // 不等桥回执。手机浏览器会把 iframe 事件循环节流到分钟级，等桥→iframe 的回执＝等分钟。
-                // 同时记下回滚所需的原状，桥要是失败就把界面撤回去。
-                let prevAnchor = null, hidNow = [];
-                if (snapshot && Array.isArray(snapshot.messages)) {
-                    for (let i = rs; i <= re - 1; i++) {
-                        const mm = snapshot.messages[i];
-                        if (mm && !mm.is_system) { mm.is_system = true; hidNow.push(i); }
-                    }
-                    const anchor = snapshot.messages[re];
-                    if (anchor) {
-                        if (!Array.isArray(anchor.swipes)) anchor.swipes = [anchor.mes || ''];
-                        prevAnchor = { mes: anchor.mes, swipes: anchor.swipes.slice(), swipeId: anchor.swipeId };
-                        const summaryMes = `【前文剧情总结·第${volume}卷】\n` + text;
-                        anchor.swipes.push(summaryMes);
-                        anchor.swipeId = anchor.swipes.length - 1;
-                        anchor.mes = summaryMes;
-                    }
-                    await render();
-                    mpMark('★本地即刻render完成（点击即变，不等桥）');
-                }
-                applyPending = { id, volume, rs, re, prevAnchor, hidNow };
-                post('apply-replace', { rangeStart: rs, rangeEnd: re, summaryText: text, volume });
+                if (!confirm(applyConfirmText(null, rs, re))) return;
+                const { id, volume } = await saveSummaryRow(currentChatKey, text, rs, re, false);
+                await startApplyReplace(id, volume, rs, re, text, true);
             } finally { applyBusy = false; }
         };
 
         async function onApplyResult(payload) {
             mpMark('★1 桥回执 apply-result 到手');
+            if (applyTimer) { clearTimeout(applyTimer); applyTimer = null; }
             document.getElementById('btn-apply').disabled = false;
             if (!payload || !payload.ok) {
                 const m = payload && payload.message || '未知错误';
                 toast('替换失败：' + m);
                 document.getElementById('gen-stat').textContent = '替换失败：' + m;
                 dlog('apply-replace 失败: ' + m, true);
-                // [MP] 撤回点击时的乐观更新：桥没改成，界面不能停在假的「已替换」上
-                if (applyPending && snapshot && Array.isArray(snapshot.messages)) {
-                    const p = applyPending;
-                    (p.hidNow || []).forEach(i => { const mm = snapshot.messages[i]; if (mm) mm.is_system = false; });
-                    const anchor = snapshot.messages[p.re];
-                    if (anchor && p.prevAnchor) {
-                        anchor.mes = p.prevAnchor.mes;
-                        anchor.swipes = p.prevAnchor.swipes;
-                        anchor.swipeId = p.prevAnchor.swipeId;
-                    }
-                    await render();
-                    dlog('已撤回本地乐观更新，界面回到替换前', true);
-                }
+                await rollbackApplyOptimistic();
                 applyPending = null;
+                applyTimedOut = null;
                 return;
             }
+            // [MP] pend：正常等着的那发；或超时已回滚、桥又迟到送来成功的那发（真实存档确实改了，照样对账）
+            const pend = applyPending || applyTimedOut;
+            const late = !applyPending && !!applyTimedOut;
             // 标记该卷已替换，并存下还原所需的原文/隐藏楼
-            if (applyPending && applyPending.id != null) {
+            if (pend && pend.id != null) {
                 try {
-                    const row = await idbReq(tx('summaries', 'readonly').get(applyPending.id));
+                    const row = await idbReq(tx('summaries', 'readonly').get(pend.id));
                     if (row) {
                         row.applied = true;
                         row.revert = {
@@ -2843,9 +2930,17 @@
                     }
                 } catch (e) { dlog('标记 applied 失败: ' + (e && e.message || e), true); }
             }
-            toast(`第${payload.volume}卷已替换隐藏`);
+            toast(late ? `第${payload.volume}卷已替换隐藏（桥回执迟到，已对齐）` : `第${payload.volume}卷已替换隐藏`);
             document.getElementById('gen-stat').textContent = `第${payload.volume}卷已替换隐藏 ✓`;
+            // [MP] 从总结框来的：清框＋灰钮，对齐「仅保存入库」的行为，防同一段原地再点一次入重复卷
+            if (pend && pend.fromBox) {
+                document.getElementById('sum-result').value = '';
+                pendingSummary = null;
+                document.getElementById('btn-save-summary').disabled = true;
+                document.getElementById('btn-apply').disabled = true;
+            }
             applyPending = null;
+            applyTimedOut = null;
             // [MP] 就地更新：桥回执已带回「隐藏楼号 + 结束楼新正文」，本地快照直接改这两处→界面秒变。
             // 不再 post('get-snapshot')：那份「全楼层全版本全文」的巨型快照跨 iframe 序列化是分钟级黑洞，
             // 隐藏/替换根本不需要重拉整份，回执里的增量就够画全。
@@ -2877,23 +2972,19 @@
             if (delBtn) { const id = parseInt(delBtn.getAttribute('data-id'), 10); if (Number.isInteger(id)) await deleteSummary(id); return; }
         });
 
-        // [MP] 把库里一条已保存的总结推到酒馆执行替换隐藏（刷新后仍可操作，走这条）
+        // [MP] 把库里一条已保存的总结推到酒馆执行替换隐藏（刷新后仍可操作，走这条）——执行体与总结框按钮共用
         async function applySavedSummary(id) {
+            if (applyPending) { toast('上一发替换还在等桥回执'); return; }
             if (!bridgeOnline) { toast('桥离线，无法替换'); return; }
             const row = await idbReq(tx('summaries', 'readonly').get(id));
             if (!row) { toast('找不到该卷'); return; }
             if (row.applied) { toast('这卷已经替换过了'); return; }
             const rs = row.rangeStart, re = row.rangeEnd;
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('这卷区间数据异常'); return; }
-            if (!confirm(
-                `确认执行替换隐藏？（第 ${row.volume} 卷）\n\n` +
-                `· ${rs}~${re} 楼将折叠为一条总结\n` +
-                `· 总结写成第 ${re} 楼的新版本\n` +
-                `· ${rs}~${re - 1} 楼将被隐藏，不再进提示词\n\n` +
-                `会改动酒馆真实存档，但可逆：随时点这一卷的【还原正文】即可一键撤销。`)) return;
-            applyPending = { id: row.id, volume: row.volume, rs, re };
+            if (row.chatKey && row.chatKey !== currentChatKey) { toast('这卷属于别的对话，回酒馆打开它再执行'); return; }
+            if (!confirm(applyConfirmText(row.volume, rs, re))) return;
             dlog(`发 apply-replace(存档) ${rs}~${re} 第${row.volume}卷`);
-            post('apply-replace', { rangeStart: rs, rangeEnd: re, summaryText: row.summaryText, volume: row.volume });
+            await startApplyReplace(row.id, row.volume, rs, re, row.summaryText, false);
         }
 
         // [MP] 删除一条总结存档（只删蜜脾库，不动酒馆；已替换的提醒先还原）
@@ -2910,7 +3001,10 @@
             await renderSummaryHistory();
         }
 
+        let revertTimer = null;
+        let revertTimedOut = null; // [MP] 超时后记住那一发 {id, volume}，桥迟到的成功回执还能对上账
         async function revertSummary(id) {
+            if (revertPending) { toast('上一发还原还在等桥回执'); return; }
             if (!bridgeOnline) { toast('桥离线，无法还原'); return; }
             const row = await idbReq(tx('summaries', 'readonly').get(id));
             if (!row) { toast('找不到该卷'); return; }
@@ -2921,6 +3015,18 @@
                 `· ${row.rangeStart}~${row.rangeEnd - 1} 楼取消隐藏\n\n` +
                 `会改动酒馆真实存档。`)) return;
             revertPending = { id, volume: row.volume };
+            revertTimedOut = null;
+            // [MP] 以前点完就干等：桥冻着毫无反应，只能反复戳。挂常驻 toast＋20秒超时说清楚
+            toast(`还原第${row.volume}卷中…（等桥回执）`, 0);
+            if (revertTimer) clearTimeout(revertTimer);
+            revertTimer = setTimeout(() => {
+                revertTimer = null;
+                if (!revertPending || revertPending.id !== id) return;
+                revertTimedOut = revertPending;
+                revertPending = null;
+                toast('还原没执行：桥20秒没回执（酒馆标签页可能被手机冻结）。存档没动，切回酒馆停一下再重试。');
+                dlog('revert-replace 20秒无回执', true);
+            }, 20000);
             mpStart(`发 revert-replace 第${row.volume}卷 结束楼${row.rangeEnd}`);
             post('revert-replace', {
                 rangeEnd: row.rangeEnd,
@@ -2933,15 +3039,20 @@
 
         async function onRevertResult(payload) {
             mpMark('★1 桥回执 revert-result 到手');
+            if (revertTimer) { clearTimeout(revertTimer); revertTimer = null; }
             if (!payload || !payload.ok) {
                 const m = payload && payload.message || '未知错误';
                 toast('还原失败：' + m);
                 dlog('revert-replace 失败: ' + m, true);
+                revertPending = null;
+                revertTimedOut = null;
                 return;
             }
-            if (revertPending && revertPending.id != null) {
+            // [MP] 正常等着的那发；或超时后桥迟到送来成功的那发（真实存档确实还原了，照样对账）
+            const pend = revertPending || revertTimedOut;
+            if (pend && pend.id != null) {
                 try {
-                    const row = await idbReq(tx('summaries', 'readonly').get(revertPending.id));
+                    const row = await idbReq(tx('summaries', 'readonly').get(pend.id));
                     if (row) {
                         // [MP] 乐观更新：删掉还原信息前先抓出隐藏楼号，本地快照立刻取消这些楼的隐藏→界面秒变
                         const floors = (payload.hiddenFloors && payload.hiddenFloors.length)
@@ -2962,8 +3073,9 @@
                     }
                 } catch (e) { dlog('清除 applied 失败: ' + (e && e.message || e), true); }
             }
-            toast(`第${payload.volume}卷已还原`);
+            toast(revertTimedOut && !revertPending ? `第${payload.volume}卷已还原（桥回执迟到，已对齐）` : `第${payload.volume}卷已还原`);
             revertPending = null;
+            revertTimedOut = null;
             await render();            // [MP] 本地秒刷
             mpMark('★2 本地乐观render完成（界面此刻应已变）');
             await renderSummaryHistory();
@@ -2997,8 +3109,25 @@
                     `<div class="sum-full">${esc(r.summaryText)}</div></details>`;
                 box.appendChild(div);
             });
-            document.getElementById('lastvol').textContent = rows.length
-                ? `已有${rows.length}卷，上一卷覆盖到 ${lastEnd}楼（仅参考）` : '暂无总结';
+            // [MP] 楼号是全 app 最高频的手输项。上一卷到哪早就算出来了，别只当死文字——
+            //   一键把「上一卷结束楼+1 ~ 最新楼」填进区间框，省掉点小框、切数字键盘、输两组数
+            const lv = document.getElementById('lastvol');
+            if (!rows.length) { lv.textContent = '暂无总结'; }
+            else if (live && lastEnd >= 0) {
+                lv.textContent = `已有${rows.length}卷，上一卷到 ${lastEnd}楼 `;
+                const fill = document.createElement('button');
+                fill.className = 'lv-fill';
+                fill.textContent = `填入下一卷 ${lastEnd + 1}~`;
+                fill.onclick = () => {
+                    document.getElementById('sum-start').value = lastEnd + 1;
+                    const endEl = document.getElementById('sum-end');
+                    const lastFloor = (snapshot && snapshot.count) ? snapshot.count - 1 : null;
+                    if (lastFloor != null && lastFloor > lastEnd) endEl.value = lastFloor;
+                    toast(`已填 ${lastEnd + 1}~${endEl.value || '？'}，结束楼可再改`);
+                };
+                lv.appendChild(fill);
+            }
+            else lv.textContent = `已有${rows.length}卷，上一卷覆盖到 ${lastEnd}楼（仅参考）`;
             // [MP] 总结集合变化（保存/替换/还原/快照）后，若注入开启则同步刷新注入（仅在线对话）
             if (injEnabled && live) { try { await refreshInjection(); } catch (e) { dlog('刷新注入失败: ' + (e && e.message || e), true); } }
         }
@@ -3006,6 +3135,7 @@
         // [MP] ============ 信息档案 + 注入（第3期）============
         let injEnabled = false, injPos = 1, injDepth = 4;   // 注入设置（全局，非按聊天）
         let codexReqId = 0, codexCfg = null, codexExistingDoc = '', codexTimer = null;
+        let codexChatKey = null; // [MP] 点「更新档案」那一刻锁定的对话 key，结果只存回它，防生成期间切对话串号
 
         async function loadCodexRecord(chatKey) {
             if (!db || !chatKey) return null;
@@ -3101,9 +3231,10 @@
             });
         }
 
-        // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版
-        async function saveCodexDoc(docText, keepPrev) {
-            const key = selectedChatKey || currentChatKey;   // [MP] 存档对话也能编辑保存
+        // [MP] 存档案：keepPrev=true 时把当前库里的正文压进 prevDocText（供还原），只留一版。
+        //   key 可显式传（AI 生成用「点更新时锁的 key」，防生成期间切对话串号）；不传退回当前选中的
+        async function saveCodexDoc(docText, keepPrev, key) {
+            key = key || selectedChatKey || currentChatKey;   // [MP] 存档对话也能编辑保存
             if (!key) throw new Error('未选择对话');
             const old = await loadCodexRecord(key);
             const rec = {
@@ -3128,11 +3259,14 @@
             return last ? String(last.summaryText || '') : '';
         }
 
-        // [MP] 把「当前档案 + 最新一卷总结」推给桥去注入；关了就发 enabled:false 让桥清空
+        // [MP] 把「当前档案 + 最新一卷总结」推给桥去注入；关了就发 enabled:false 让桥清空。
+        //   档案读库里存的版本，不读档案框：框里可能是没保存的草稿、甚至是你正翻着的另一个对话的档案，
+        //   而落点标记卡片显示的就是库里版本——注入什么、卡片说什么，口径必须是同一个。
         async function refreshInjection() {
             if (!bridgeOnline) { document.getElementById('inj-stat').textContent = '桥离线，注入待桥上线'; return; }
             if (!injEnabled) { post('set-injection', { enabled: false }); return; }
-            const codexText = document.getElementById('codex-text').value || '';
+            const rec = currentChatKey ? await loadCodexRecord(currentChatKey) : null;
+            const codexText = (rec && rec.docText) || '';
             const summaryText = await latestSummaryText();
             post('set-injection', {
                 enabled: true, codexText, summaryText,
@@ -3174,7 +3308,7 @@
                 toast(selectedIsLive() ? '档案已保存' : '档案已保存（存档对话，酒馆打开时会用到这份）');
                 await renderCodex();
                 if (injEnabled && selectedIsLive()) await refreshInjection();
-            } catch (e) { toast('保存失败: ' + (e && e.message || e)); dlog('存档案失败: ' + (e && e.message || e), true); }
+            } catch (e) { toast('保存失败：' + (e && e.message || e)); dlog('存档案失败: ' + (e && e.message || e), true); }
             finally { codexSaveBusy = false; }
         };
 
@@ -3196,7 +3330,12 @@
 
         // AI更新档案：两阶段，跟总结同一条路（桥取原文→前台直发副API），长请求不被手机冻
         document.getElementById('btn-codex-gen').onclick = () => {
-            if (!selectedIsLive()) { toast('这是历史存档对话，只读。要AI更新档案请在酒馆里打开它'); return; }
+            if (!selectedIsLive()) {
+                toast(selectedChatKey
+                    ? '这是历史存档对话，只读。要AI更新档案请在酒馆里打开它'
+                    : '还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
+                return;
+            }
             if (codexReqId !== 0) { toast('档案更新已在进行，等它回来或超时'); return; }
             if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('codex-start').value, 10);
@@ -3206,11 +3345,13 @@
             if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); return; }
             const reqId = ++genReqSeq;
             codexReqId = reqId; codexCfg = cfg;
+            codexChatKey = currentChatKey;
             codexExistingDoc = document.getElementById('codex-text').value || '';
             document.getElementById('btn-codex-gen').disabled = true;
             document.getElementById('codex-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
             if (codexTimer) clearTimeout(codexTimer);
             codexTimer = setTimeout(() => {
+                codexTimer = null;
                 if (codexReqId !== reqId) return;
                 codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
                 document.getElementById('codex-stat').textContent = '桥没回原文（酒馆标签页可能被冻）：切回酒馆停一下再回来重点';
@@ -3262,15 +3403,18 @@
                     return;
                 }
                 ta.value = text;
-                await saveCodexDoc(text, true);      // 旧版压进 prevDocText
-                await renderCodex();
+                await saveCodexDoc(text, true, codexChatKey);      // 旧版压进 prevDocText；只存回点更新时锁的对话
+                await renderCodex();      // [MP] 按当前选中的对话重画档案框：生成期间切走了也不会把 A 的档案盖在 B 的框里
+                if (selectedChatKey && codexChatKey && selectedChatKey !== codexChatKey) {
+                    toast('档案已存回生成时的对话：' + (splitChatKey(codexChatKey).chat || codexChatKey));
+                }
                 document.getElementById('codex-stat').textContent = '档案已更新并入库 ✓ 可再编辑后保存';
                 if (injEnabled) await refreshInjection();
             } catch (e) {
                 if (codexReqId !== reqId) { dlog('档案失败但已不是当前请求，忽略 #' + reqId, true); return; }
                 codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
                 document.getElementById('codex-stat').textContent = '生成失败：' + (e && e.message || e);
-                toast('档案更新失败: ' + (e && e.message || e));
+                toast('档案更新失败：' + (e && e.message || e));
             }
         }
 
@@ -3704,6 +3848,8 @@
             const main = document.getElementById('main');
             if (!main) return;
             main.querySelectorAll('.inject-marker').forEach(e => e.remove());
+            // [MP] 落点是按「在线对话」的楼号算的。正翻着书架离线本时画出来只会插错位置——不画
+            if (!selectedIsLive()) return;
             const target = computeInjectTarget();
             if (!target) return;
             const marker = await buildInjectMarkerEl(target);
@@ -3718,16 +3864,35 @@
         document.getElementById('f-ai').onchange = render;
         document.getElementById('f-kw').oninput = () => { clearTimeout(window.__kwT); window.__kwT = setTimeout(render, 200); };
 
+        // [MP] 按 chatKey 索引只走键游标数条数，一个字的正文都不载入。
+        //   以前这里 getAll('prose') 把所有书全部楼层全文拉进内存只为数个数，
+        //   而侧栏树每次快照变化/入库/存档案都要重数——几本长篇书就是每次几MB，老 WebView 的稳定卡顿源。
+        function countByChatKey(store) {
+            return new Promise((res, rej) => {
+                const out = new Map();
+                const req = tx(store, 'readonly').index('chatKey').openKeyCursor();
+                req.onsuccess = () => {
+                    const c = req.result;
+                    if (!c) return res(out);
+                    out.set(c.key, (out.get(c.key) || 0) + 1);
+                    c.continue();
+                };
+                req.onerror = () => rej(req.error);
+            });
+        }
+
         // [MP] 扫三库，按聊天汇总每个聊天各自存了多少
         async function allArchiveKeys() {
             if (!db) return [];
-            const prose = await idbReq(tx('prose', 'readonly').getAll());
-            const sums = await idbReq(tx('summaries', 'readonly').getAll());
-            const codex = await idbReq(tx('codex', 'readonly').getAll());
+            const [proseCnt, sumCnt, codex] = await Promise.all([
+                countByChatKey('prose'),
+                countByChatKey('summaries'),
+                idbReq(tx('codex', 'readonly').getAll()),   // 档案一聊天一条，量小，为判断"有无正文"仍需读值
+            ]);
             const map = new Map();
             const get = (k) => { if (!map.has(k)) map.set(k, { chatKey: k, prose: 0, vols: 0, codex: false }); return map.get(k); };
-            prose.forEach(r => { if (r.chatKey) get(r.chatKey).prose++; });
-            sums.forEach(r => { if (r.chatKey) get(r.chatKey).vols++; });
+            proseCnt.forEach((n, k) => { get(k).prose = n; });
+            sumCnt.forEach((n, k) => { get(k).vols = n; });
             codex.forEach(r => { if (r.chatKey && (r.docText || '').trim()) get(r.chatKey).codex = true; });
             return Array.from(map.values()).sort((a, b) => a.chatKey.localeCompare(b.chatKey));
         }
@@ -3752,6 +3917,11 @@
         function setDrawerReadonly(ro) {
             const d = document.getElementById('drawer');
             if (d) d.classList.toggle('readonly', !!ro);
+            // [MP] 横幅分两种嘴：没开任何对话 ≠ 翻着历史存档，别对着空工作区讲"这是存档"
+            const bn = document.getElementById('drawer-ro');
+            if (bn && ro) bn.textContent = selectedChatKey
+                ? '历史存档对话（不是酒馆里正在打开的那个）。档案和总结可以照常查阅、编辑、保存。只有 AI 生成、替换隐藏、注入这几样需要在酒馆里打开它才能用。'
+                : '还没打开对话。到酒馆开一个蜜脾会自动跟过来，或点左上角 ☰ 从存档里挑一个查阅。AI 生成、替换隐藏、注入要等对话在线才能用。';
             // [MP] 只有这几样真的要在线桥：AI生成要问桥要原文，注入/替换隐藏要改酒馆真实存档
             const liveOnly = ['btn-codex-gen', 'btn-gen', 'inj-enabled', 'inj-pos', 'inj-depth'];
             liveOnly.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
@@ -3789,7 +3959,7 @@
                         e.stopPropagation();
                         if (!confirm(`删除这条存档？（存于${rec.floorIndex}楼·版本${rec.swipeIndex}）\n只删蜜脾相册里的这张照片，不动酒馆。`)) return;
                         try { await delProse(rec.id); toast('已删除该存档'); renderCharTree(); await renderArchivedProse(chatKey); }
-                        catch (e2) { toast('删除失败: ' + (e2 && e2.message || e2)); }
+                        catch (e2) { toast('删除失败：' + (e2 && e2.message || e2)); }
                     };
                     bar.appendChild(del); inner.appendChild(bar);
                     const b = document.createElement('div'); const r = renderMd(rec.content);
@@ -3979,6 +4149,11 @@
                 });
                 card.appendChild(head); card.appendChild(body); wrap.appendChild(card);
             });
+            // [MP] 长按是收纳/改名的唯一入口，而 title 在触屏上永远不显示——不写出来没人发现得了
+            const hint = document.createElement('div');
+            hint.className = 'ct-hint';
+            hint.textContent = '长按对话：收进书架 / 移出 / 改名';
+            wrap.appendChild(hint);
         }
 
         document.getElementById('btn-menu').onclick = () => {
@@ -4366,7 +4541,8 @@
                 codex: await getAll('codex'),
                 books: Array.from(bookKeys),   // [MP] 书架名单也带走，换手机导回去还是那几本书
             };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            // [MP] 不美化缩进：正文库大时 null,2 让字符串内存峰值直接翻倍，老 WebView 容易白屏
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             const d = new Date().toISOString().slice(0, 10);
@@ -4395,7 +4571,7 @@
                 await renderCharTree();   // [MP] 导入后刷新侧栏
                 if (selectedChatKey) await selectChat(selectedChatKey);
             } catch (err) {
-                toast('导入失败: ' + (err && err.message || err));
+                toast('导入失败：' + (err && err.message || err));
             } finally {
                 e.target.value = '';
             }
@@ -4420,19 +4596,20 @@
         // [MP] ============ 启动 ============
         (async function init() {
             dlog('vault启动，marked=' + (!!window.marked));
-            try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败: ' + e); dlog('IndexedDB打开失败: ' + e, true); }
+            try { db = await openDB(); dlog('IndexedDB已打开'); } catch (e) { toast('IndexedDB 打开失败：' + e); dlog('IndexedDB打开失败: ' + e, true); }
             try { await initBgLibrary(); } catch (e) { dlog('背景库载入失败: ' + e, true); } // [MP-美化] 载入背景库并铺上已选背景
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
             try { await loadBookKeys(); dlog('书架名单已载入，' + bookKeys.size + ' 本'); } catch (e) { dlog('书架名单载入失败: ' + e, true); }
             try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
             try { await renderViz(null); } catch (e) { } // [MP-美化] 空页面也把五个分类抽屉常驻摆出来，别让顶栏空半截
+            setDrawerReadonly(true); // [MP] 没开对话前抽屉先进只读态：生成/替换的钮灰着并说明为什么，别亮一排点了才报错的按钮
             // [MP] 桥还没上线也先把上次的在线对话直连读盘摆出来（酒馆页冻着也能显示正文，不用干等桥）
             try {
                 const lk = localStorage.getItem('mp_live_key'); const la = localStorage.getItem('mp_live_avatar');
                 if (lk) { if (la) currentCharAvatar = la; setChatKey(lk); pullSnapshotDirect({}).catch(() => { }); }
             } catch (e) { dlog('恢复上次在线对话失败: ' + e, true); }
             // [MP] 直连问服务器酒馆此刻到底开着哪个对话，映射并跟过去——不靠桥（首开/桥冻结时也能对齐真实在线对话）
-            syncToLive({ follow: true }).catch(() => { });
+            syncToLive({ follow: true }).catch(e => dlog('启动对齐在线对话失败: ' + (e && e.message || e), true));
             post('ping');
             dlog('已发ping，等桥应答');
             heartbeat();
