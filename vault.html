@@ -1174,6 +1174,9 @@
         .viz-v { font-size: 13px; line-height: 1.75; }
         .viz-v p { margin: 0 0 4px; }
         .viz-v p:last-child { margin-bottom: 0; }
+        /* [MP] 长面板底部「收起」：档案/总结/分类卡片动辄几千字，翻到底不用再爬回顶栏 */
+        .pane-close { display: block; width: 100%; margin-top: 14px; padding: 8px 0; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); font-size: 12.5px; text-align: center; cursor: pointer; }
+        .pane-close:active { color: var(--ink); }
 
         @media (min-width: 900px) {
             #sidebar { transform: none; }
@@ -1362,6 +1365,7 @@
                         <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
                         <span class="floor-meta" id="inj-stat"></span>
                     </div>
+                    <button class="pane-close">▲ 收起</button>
                 </div>
             </div>
             <!-- 总结 -->
@@ -1388,6 +1392,7 @@
                         </div>
                     </div>
                     <div class="summary-history" id="sum-history"></div>
+                    <button class="pane-close">▲ 收起</button>
                 </div>
             </div>
             <!-- 筛选检索（并入功能键一撮，仅在线对话可用） -->
@@ -3337,7 +3342,7 @@
                 pane.className = 'fold-pane';
                 pane.id = 'pane-viz-' + c.label;
                 pane.dataset.title = c.label;
-                pane.innerHTML = '<div class="mp-fold-body codex-viz">' + html + '</div>';
+                pane.innerHTML = '<div class="mp-fold-body codex-viz">' + html + '<button class="pane-close">▲ 收起</button></div>';
                 tablesToCards(pane);   // [MP] 表格拆堆叠卡片，手机竖屏不再一字一行
                 panes.appendChild(pane);
                 if (wasOpen.has(c.label)) { pane.classList.add('open'); btn.classList.add('active'); }
@@ -4398,6 +4403,21 @@
                     if (t) t.classList.remove('active');
                 });
             }
+        });
+        // [MP] 长面板底部「▲ 收起」：委托到抽屉上，renderViz 重建的分类面板也照样吃这条。
+        //   收完把顶栏拉回视野（老 WebView 禁 smooth），不然人还停在几千字外的半空里
+        document.getElementById('drawer').addEventListener('click', (e) => {
+            const btn = e.target.closest('.pane-close');
+            if (!btn) return;
+            const pane = btn.closest('.fold-pane');
+            if (!pane) return;
+            pane.classList.remove('open');
+            const tab = document.querySelector('.fold-tab[data-pane="' + pane.id.replace(/^pane-/, '') + '"]');
+            if (tab) tab.classList.remove('active');
+            mpSlide(pane, false);
+            mpSyncDrawerOpen();
+            const bar = document.getElementById('fold-bar');
+            if (bar) bar.scrollIntoView({ block: 'start', behavior: 'auto' });
         });
         // [MP] 齿轮展开/收起工具组
         document.getElementById('btn-tools').onclick = () => {
