@@ -2738,6 +2738,14 @@
             throw new Error('连着' + tries + '发都没成（' + lastMsg + '）：缩小区间，或换个渠道/切非流式再试');
         }
 
+        // [MP] 剥外层代码围栏：模型爱把整份输出裹进 ```markdown … ``` 里。
+        //   总结还好，档案存了围栏就毁掉按 ## 标题切段的可视化，下轮更新还会把围栏喂回去越裹越多
+        function stripFence(s) {
+            s = String(s || '').trim();
+            const m = /^```[^\n]*\n([\s\S]*?)\n?```$/.exec(s);
+            return m ? m[1].trim() : s;
+        }
+
         function onSummaryResult(payload) {
             // [MP] 配对：只认当前在等的那一发；对不上（僵尸/过期回包）直接丢，不清状态不填框
             if (!payload || payload.reqId !== genReqId || genReqId === 0) {
@@ -2750,13 +2758,14 @@
             document.getElementById('btn-gen').disabled = false;
             if (!payload || typeof payload.text !== 'string') { document.getElementById('gen-stat').textContent = '返回为空'; return; }
             dlog('收到 summary 长度=' + payload.text.length);
-            if (!payload.text.trim()) {
+            const cleanTxt = stripFence(payload.text);   // [MP] 剥外层围栏再入框
+            if (!cleanTxt) {
                 document.getElementById('gen-stat').textContent = '副API返回空内容（模型没吐正文，多半被拒/过滤或思考模型）';
                 dlog('summary 为空白', true);
                 return;
             }
-            pendingSummary = { chatKey: genChatKey, rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text: payload.text };
-            document.getElementById('sum-result').value = payload.text;
+            pendingSummary = { chatKey: genChatKey, rangeStart: payload.rangeStart, rangeEnd: payload.rangeEnd, text: cleanTxt };
+            document.getElementById('sum-result').value = cleanTxt;
             document.getElementById('gen-stat').textContent = `已生成 ${payload.rangeStart}~${payload.rangeEnd}，可编辑`;
             document.getElementById('btn-save-summary').disabled = false;
             document.getElementById('btn-apply').disabled = false;
@@ -3172,7 +3181,7 @@
             document.getElementById('btn-codex-revert').disabled = !(rec && rec.prevDocText);
             document.getElementById('btn-codex-save').disabled = !ta.value.trim();   // [MP] 档案空就没得存，保存档案跟着灰掉
             document.getElementById('codex-meta').textContent = chatKey
-                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}` : '本对话暂无档案')
+                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}${ta.value.length > 6000 ? ' · ⚠ 档案偏长，AI更新可能被截断，建议修剪时间线旧行' : ''}` : '本对话暂无档案')
                 : '未选择对话';
             await renderViz(chatKey);   // [MP] 档案变了顺手刷可视化
         }
@@ -3415,7 +3424,7 @@
             }
             try {
                 const codexPrompt = document.getElementById('s-codex-prompt').value || DEFAULT_CODEX_PROMPT;
-                const text = await vaultSummarize(codexPrompt, userText, codexCfg, onProgress);
+                const text = stripFence(await vaultSummarize(codexPrompt, userText, codexCfg, onProgress));   // [MP] 围栏入库会毁掉按标题切段的可视化，必须剥
                 if (codexReqId !== reqId) { dlog('档案回来但已不是当前请求，丢弃 #' + reqId, true); return; }
                 codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
                 if (!text || !text.trim()) {
@@ -3437,6 +3446,7 @@
                 codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
                 document.getElementById('codex-stat').textContent = '生成失败：' + (e && e.message || e);
                 toast('档案更新失败：' + (e && e.message || e));
+                await renderCodex();   // [MP] 流式失败时框里可能剩半截残档，重画回库里的完整版，防手滑把残档保存
             }
         }
 
