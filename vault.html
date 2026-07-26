@@ -1162,6 +1162,18 @@
         .codex-viz th, .codex-viz td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
         .codex-viz th { background: var(--panel2); color: var(--ink); font-weight: 600; white-space: nowrap; }
         .codex-viz pre { white-space: pre-wrap; background: var(--sf); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; }
+        /* [MP] 档案表格→堆叠卡片：三列长文表格在手机竖屏挤成一字一行没法看（中文逐字可折行，横滚永不触发），
+           改成一行数据一张卡：首列当卡片标题，其余列变「表头小字+内容」竖排字段 */
+        .viz-cards { margin-bottom: 6px; }
+        .viz-card { background: var(--sf); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 9px 12px 10px; }
+        .viz-card + .viz-card { margin-top: 8px; }
+        .viz-card-t { font-weight: 600; color: var(--ink); font-size: 13.5px; }
+        .viz-card-t p { margin: 0; display: inline; }
+        .viz-field { margin-top: 6px; }
+        .viz-k { display: block; font-size: 11.5px; color: var(--accent); margin-bottom: 1px; }
+        .viz-v { font-size: 13px; line-height: 1.75; }
+        .viz-v p { margin: 0 0 4px; }
+        .viz-v p:last-child { margin-bottom: 0; }
 
         @media (min-width: 900px) {
             #sidebar { transform: none; }
@@ -3235,6 +3247,39 @@
             return '<svg viewBox="0 0 24 24">' + (I[key] || I.table) + '</svg>';
         }
 
+        // [MP] 档案表格拆卡片：marked 渲出的 <table> 逐行改写成 .viz-card。
+        //   首列格当卡片标题（角色名/时间/地点），其余列变「表头：内容」竖排字段；空格子直接不占地。
+        //   保留格子里的 innerHTML（粗体/换行等 markdown 痕迹不丢）。表头缺失或没有数据行的表原样放过。
+        function tablesToCards(root) {
+            root.querySelectorAll('table').forEach(tb => {
+                const heads = [];
+                tb.querySelectorAll('thead th').forEach(th => heads.push(th.textContent.trim()));
+                const rows = tb.querySelectorAll('tbody tr');
+                if (!heads.length || !rows.length) return;
+                const wrap = document.createElement('div');
+                wrap.className = 'viz-cards';
+                rows.forEach(tr => {
+                    const tds = tr.querySelectorAll('td');
+                    if (!tds.length) return;
+                    const card = document.createElement('div');
+                    card.className = 'viz-card';
+                    const t = document.createElement('div');
+                    t.className = 'viz-card-t';
+                    t.innerHTML = tds[0].textContent.trim() ? tds[0].innerHTML : '（未命名）';
+                    card.appendChild(t);
+                    for (let i = 1; i < tds.length; i++) {
+                        if (!tds[i].textContent.trim()) continue;
+                        const f = document.createElement('div');
+                        f.className = 'viz-field';
+                        f.innerHTML = '<span class="viz-k">' + esc(heads[i] || '') + '</span><div class="viz-v">' + tds[i].innerHTML + '</div>';
+                        card.appendChild(f);
+                    }
+                    wrap.appendChild(card);
+                });
+                tb.parentNode.replaceChild(wrap, tb);
+            });
+        }
+
         // [MP] 可视化：把档案里十几个细碎小节按关键字归进 人物/世界观/地点/线索 四大类，一类一个标签
         async function renderViz(chatKey) {
             chatKey = chatKey || selectedChatKey;
@@ -3293,6 +3338,7 @@
                 pane.id = 'pane-viz-' + c.label;
                 pane.dataset.title = c.label;
                 pane.innerHTML = '<div class="mp-fold-body codex-viz">' + html + '</div>';
+                tablesToCards(pane);   // [MP] 表格拆堆叠卡片，手机竖屏不再一字一行
                 panes.appendChild(pane);
                 if (wasOpen.has(c.label)) { pane.classList.add('open'); btn.classList.add('active'); }
             });
