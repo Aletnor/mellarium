@@ -543,46 +543,23 @@
             console.log(TAG, t);
         }
 
-        // [MP] 自制小输入窗要楼层号。不用 window.prompt：Miel 的安卓 WebView 把 prompt() 拦掉了，
-        //   点了不弹窗、返回 null 还一声不吭——「/jump 正常、魔棒按钮坏」就是它（2026-07-26 实锤）。
-        //   数字输入框在冷启动的 WebView 上键盘也是醒的（vault 的 IME 预热就靠这个特性），最稳。
-        function askFloor() {
+        // [MP] 要楼层号一律走酒馆自家的 callGenericPopup(INPUT)：
+        //   - window.prompt 在 Miel 的安卓 WebView 上被拦（不弹、静默返回 null）——魔棒按钮第一次坏；
+        //   - 手搓 div 弹窗又打不进字（酒馆全局键盘钩子抢焦点/手势外 focus 不弹键盘）——第二次坏，还丑；
+        //   - 酒馆原生 <dialog> 弹窗她天天在用（改名等），键盘、焦点、样式全是现成的，这才是正路。
+        async function askFloor() {
             const cnt = total();
             if (cnt <= 0) { toast('当前没有聊天'); return; }
-            let pop = document.getElementById('mp_jump_pop');
-            if (!pop) {
-                pop = document.createElement('div');
-                pop.id = 'mp_jump_pop';
-                pop.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);';
-                pop.innerHTML =
-                    '<div style="background:var(--SmartThemeBlurTintColor,#1e1e1e);color:var(--SmartThemeBodyColor,#eee);border:1px solid var(--SmartThemeBorderColor,#555);border-radius:10px;padding:16px 18px;min-width:230px;box-shadow:0 8px 30px rgba(0,0,0,.5);">' +
-                    '<div style="margin-bottom:10px;font-size:15px;">跳到第几楼？<span id="mp_jump_range" style="opacity:.7;font-size:13px;"></span></div>' +
-                    '<input id="mp_jump_num" type="number" inputmode="numeric" min="0" style="width:100%;box-sizing:border-box;font-size:16px;padding:6px 8px;margin-bottom:12px;background:transparent;color:inherit;border:1px solid var(--SmartThemeBorderColor,#555);border-radius:6px;">' +
-                    '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
-                    '<div id="mp_jump_cancel" class="menu_button" style="margin:0;">取消</div>' +
-                    '<div id="mp_jump_go" class="menu_button" style="margin:0;">跳转</div>' +
-                    '</div></div>';
-                document.body.appendChild(pop);
-                const doJump = function () {
-                    const v = document.getElementById('mp_jump_num').value;
-                    pop.style.display = 'none';
-                    if (v === '') return;
-                    jumpTo(parseInt(v, 10));
-                };
-                document.getElementById('mp_jump_go').addEventListener('click', doJump);
-                document.getElementById('mp_jump_cancel').addEventListener('click', function () { pop.style.display = 'none'; });
-                pop.addEventListener('click', function (e) { if (e.target === pop) pop.style.display = 'none'; });
-                document.getElementById('mp_jump_num').addEventListener('keydown', function (e) { if (e.key === 'Enter') doJump(); });
+            const c = ctx();
+            if (!c || typeof c.callGenericPopup !== 'function' || !c.POPUP_TYPE) {
+                toast('这版酒馆没有输入弹窗接口，请直接输 /jump 楼层号'); return;
             }
-            document.getElementById('mp_jump_range').textContent = '（0 ~ ' + (cnt - 1) + '）';
-            const inp = document.getElementById('mp_jump_num');
-            inp.value = '';
-            pop.style.display = 'flex';
-            // 等酒馆的魔棒菜单淡出完再聚焦，键盘弹起不跟动画打架
-            setTimeout(function () { try { inp.focus(); } catch (e) {} }, 120);
+            const v = await c.callGenericPopup('跳到第几楼？（0 ~ ' + (cnt - 1) + '）', c.POPUP_TYPE.INPUT, '');
+            if (v === null || v === false || v === undefined || String(v).trim() === '') return;
+            jumpTo(parseInt(String(v).trim(), 10));
         }
 
-        // [MP] 挂载点1：魔棒菜单里加一个「楼层定位」按钮，点了弹自制输入窗
+        // [MP] 挂载点1：魔棒菜单里加一个「楼层定位」按钮，点了弹酒馆原生输入窗
         function addWandButton() {
             const menu = document.getElementById('extensionsMenu');
             if (!menu) { setTimeout(addWandButton, 800); return; }
@@ -592,7 +569,9 @@
             btn.className = 'list-group-item flex-container flexGap5 interactable';
             btn.tabIndex = 0;
             btn.innerHTML = '<div class="fa-solid fa-crosshairs extensionsMenuExtensionButton"></div><span>楼层定位</span>';
-            btn.addEventListener('click', askFloor);
+            btn.addEventListener('click', function () {
+                askFloor().catch(function (e) { toast('楼层定位出错：' + (e && e.message || e)); });
+            });
             menu.appendChild(btn);
             console.log(TAG, '魔棒菜单已加楼层定位按钮');
         }
