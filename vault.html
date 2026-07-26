@@ -4064,7 +4064,44 @@
                     await removeBook(chatKey);
                 });
             }
+            // [MP] 彻底删除只对非在线对话开放：在线那条就算删了，下一次快照一到又会被画回来，删了等于没删。
+            //   这是清理"测试残渣"的唯一出口——酒馆原文早没了、也没进书架，但总结/档案还挂在本地库里占着侧边栏。
+            if (!live) {
+                mk('从蜜脾删掉这条', '本地的正文/总结/档案全删；酒馆那边（如果还有）不受影响', 'danger', async () => {
+                    closeLpMenu();
+                    await purgeChat(chatKey);
+                });
+            }
             document.getElementById('lp-modal').classList.add('show');
+        }
+
+        // [MP] 彻底删掉一条对话在蜜脾的全部本地数据：正文(prose)+总结(summaries)+档案(codex)+书架名单。
+        //   蜜脾只清自己家，酒馆侧的 jsonl 一个字不动。删前把家底数出来给她看清楚再确认。
+        async function purgeChat(chatKey) {
+            let pcnt = 0, vols = 0, hasCodex = false;
+            try {
+                const all = await allArchiveKeys();
+                const rec = all.find(r => r.chatKey === chatKey);
+                if (rec) { pcnt = rec.prose; vols = rec.vols; hasCodex = rec.codex; }
+            } catch (e) { }
+            if (!confirm(`把「${splitChatKey(chatKey).chat}」从蜜脾里彻底删掉？\n\n· 本地 ${pcnt} 条正文、${vols} 卷总结${hasCodex ? '、1 份档案' : ''}全部删除\n· 酒馆那边（如果这对话还在）一个字都不动\n· 删了就没了，除非服务器备份里还留着旧的`)) return;
+            bookKeys.delete(chatKey);
+            lastMirrorSig.delete(chatKey);
+            try { await saveBookKeys(); } catch (e) { }
+            const wipe = (storeName) => new Promise((res, rej) => {
+                const req = tx(storeName, 'readwrite').index('chatKey').openCursor(IDBKeyRange.only(chatKey));
+                req.onsuccess = () => { const c = req.result; if (c) { c.delete(); c.continue(); } else res(); };
+                req.onerror = () => rej(req.error);
+            });
+            try {
+                await wipe('prose');
+                await wipe('summaries');
+                await idbReq(tx('codex', 'readwrite').delete(chatKey));
+            } catch (e) { toast('删除出错：' + (e && e.message || e)); return; }
+            toast('已删掉「' + splitChatKey(chatKey).chat + '」的全部蜜脾存档');
+            if (selectedChatKey === chatKey) bookSnapshot = null;
+            await renderCharTree();
+            if (selectedChatKey === chatKey) await selectChat(chatKey); // 正在看着它就重选一遍，让空态/只读横幅接管画面
         }
 
         // [MP] 移出书架。有总结/档案挂着的时候多问一句：正文一走，它们就没有对应的原文了。
@@ -4164,7 +4201,7 @@
                     // [MP] 长按任何一条都弹小菜单：收进书架 / 移出书架 / 改名(仅在线)。
                     //   改名只对在线那条开放，因为酒馆的 renameChat 只认当前打开的聊天。
                     if (live) btn.classList.add('online');
-                    btn.title = '长按：收进书架 / 移出' + (live ? ' / 改名' : '');
+                    btn.title = '长按：收进书架 / 移出' + (live ? ' / 改名' : ' / 删除');
                     bindLongPress(btn, () => openLpMenu(c.chatKey, live));
                     body.appendChild(btn);
                 });
@@ -4173,7 +4210,7 @@
             // [MP] 长按是收纳/改名的唯一入口，而 title 在触屏上永远不显示——不写出来没人发现得了
             const hint = document.createElement('div');
             hint.className = 'ct-hint';
-            hint.textContent = '长按对话：收进书架 / 移出 / 改名';
+            hint.textContent = '长按对话：收进书架 / 移出 / 改名 / 删除';
             wrap.appendChild(hint);
             // [MP] 重画完把侧栏滚回原位，别让列表在你眼皮底下跳回顶部
             if (sb && keepScroll) sb.scrollTop = keepScroll;
