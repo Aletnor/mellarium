@@ -2327,8 +2327,8 @@
             document.getElementById('inj-enabled').checked = !!injEnabled;
             document.getElementById('inj-pos').value = String(injPos);
             document.getElementById('inj-depth').value = String(injDepth);
-            // [MP] 五表选择性注入：默认全勾；抽屉可能先画了默认态，载入后对齐一遍
-            injTables = Object.assign({ char: true, world: true, place: true, time: true, clue: true }, (await getSetting('injTables', null)) || {});
+            // [MP] 五表选择性注入：默认随总开关全关；抽屉可能先画了默认态，载入后对齐一遍
+            injTables = Object.assign({ char: false, world: false, place: false, time: false, clue: false }, (await getSetting('injTables', null)) || {});
             document.querySelectorAll('.inj-toggle input').forEach(cb => { cb.checked = !!injTables[cb.dataset.injkey]; });
         }
 
@@ -3306,7 +3306,7 @@
         ];
         function catForTitle(title) { return MP_CATS.find(c => c.re.test(title)) || MP_CATS[1]; }   // 认不出兜底世界观
         // [MP] 五表选择性注入：每个分类抽屉标题行有「注入」勾，摘了勾该表就不进注入文本
-        let injTables = { char: true, world: true, place: true, time: true, clue: true };
+        let injTables = { char: false, world: false, place: false, time: false, clue: false };
         function filterCodexForInjection(docText) {
             const lines = String(docText || '').split('\n');
             const out = [];
@@ -3425,6 +3425,10 @@
         document.getElementById('inj-enabled').onchange = async (e) => {
             injEnabled = e.target.checked;
             await putSetting('injEnabled', injEnabled);
+            // [MP] 总开关联动五表：开则全开，关则全关
+            MP_CATS.forEach(c => { injTables[c.key] = injEnabled; });
+            await putSetting('injTables', injTables);
+            document.querySelectorAll('.inj-toggle input').forEach(cb => { cb.checked = injEnabled; });
             document.getElementById('inj-stat').textContent = injEnabled ? '注入开启，发送中…' : '注入已关闭';
             await refreshInjection();
             await updateInjectMarker();  // [MP] 开/关立刻在正文区显/隐落点线
