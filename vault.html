@@ -2504,18 +2504,35 @@
             if (genTick) { clearInterval(genTick); genTick = null; }
         }
 
-        // [MP] 生成两阶段：①问桥要区间原文（秒回的短活，桥就算在后台也顶得住）②网页自己直连副API发总结
-        //      长请求留在前台网页发，手机切来切去都不会把它冻死；桥只干读原文这种一秒钟的活。
-        document.getElementById('btn-gen').onclick = () => {
-            if (!selectedIsLive()) {
-                // [MP] 「没开对话」和「翻着存档」是两回事，别对着空气说"这是历史存档"
-                toast(selectedChatKey
-                    ? '这是历史存档对话，只读。要生成总结请在酒馆里打开它'
-                    : '还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
+        // [MP] 从本地书架镜像取区间原文，拼成和桥 collectRangeText 一字不差的格式（【N楼·谁】+净版正文）。
+        //   镜像入库时净版就一并抄了，优先用净版（跟桥同口径）；老书没净版就用原文顶上。
+        //   注意：镜像是入库那一刻的净版快照，入库后改过酒馆正则的话这里还是老规则洗的版本。
+        async function collectLocalRangeText(chatKey, rangeStart, rangeEnd) {
+            const snap = (bookSnapshot && bookSnapshot.chatKey === chatKey) ? bookSnapshot : await loadBookSnapshot(chatKey);
+            if (!snap || !snap.messages || !snap.messages.length) throw new Error('这本书没有本地镜像（先长按收进书架）');
+            const byFloor = new Map();
+            snap.messages.forEach(m => byFloor.set(m.floorIndex, m));
+            const parts = [];
+            for (let i = rangeStart; i <= rangeEnd; i++) {
+                const m = byFloor.get(i);
+                if (!m) throw new Error('楼层 ' + i + ' 不在本地镜像里');
+                const who = m.name || (m.is_user ? 'User' : 'AI');
+                const txt = (m.mesClean != null) ? m.mesClean : (m.mes != null ? m.mes : '');
+                parts.push('【' + i + '楼·' + who + '】\n' + txt);
+            }
+            return parts.join('\n\n');
+        }
+
+        // [MP] 生成两阶段：①拿区间原文——在线对话问桥要（秒回短活），存档书直接读本地镜像，桥离线也能总结
+        //      ②网页自己直连副API发总结。长请求留在前台网页发，手机切来切去都不会把它冻死。
+        document.getElementById('btn-gen').onclick = async () => {
+            const live = selectedIsLive();
+            if (!live && !selectedChatKey) {
+                toast('还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
                 return;
             }
             if (genReqId !== 0) { toast('已有一段在生成中，等它回来或超时再点'); return; } // [MP] 在飞就别再发
-            if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
+            if (live && !bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('sum-start').value, 10);
             const re = parseInt(document.getElementById('sum-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
@@ -2523,23 +2540,37 @@
             if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); return; }
             const reqId = ++genReqSeq;
             genReqId = reqId;                 // [MP] 记下这一发的号，只认它的回包
-            genPhase = 'range';               // [MP] 第一阶段：等桥给原文
-            genChatKey = currentChatKey;      // [MP] 锁定这一发属于哪个对话
+            genPhase = 'range';               // [MP] 第一阶段：等原文
+            genChatKey = live ? currentChatKey : selectedChatKey;   // [MP] 锁定这一发属于哪个对话
             genCfg = cfg;
             genPrompt = document.getElementById('s-prompt').value || DEFAULT_SUMMARY_PROMPT;
             document.getElementById('btn-gen').disabled = true;
-            dlog(`发 get-range-text ${rs}~${re} #${reqId}`);
             clearGen();
-            document.getElementById('gen-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
-            // [MP] 只给取原文 20 秒；桥要是被手机冻住不回，就提示切回酒馆标签页唤醒
-            genTimer = setTimeout(() => {
-                if (genReqId !== reqId || genPhase !== 'range') return;
-                clearGen(); genReqId = 0; genPhase = null;
-                document.getElementById('btn-gen').disabled = false;
-                document.getElementById('gen-stat').textContent = '桥没回原文（酒馆标签页可能被手机冻结了）：切回酒馆标签页停一下再回来重点生成';
-                dlog('get-range-text 20秒没回，疑似桥标签页被冻', true);
-            }, 20000);
-            post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+            if (live) {
+                dlog(`发 get-range-text ${rs}~${re} #${reqId}`);
+                document.getElementById('gen-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
+                // [MP] 只给取原文 20 秒；桥要是被手机冻住不回，就提示切回酒馆标签页唤醒
+                genTimer = setTimeout(() => {
+                    if (genReqId !== reqId || genPhase !== 'range') return;
+                    clearGen(); genReqId = 0; genPhase = null;
+                    document.getElementById('btn-gen').disabled = false;
+                    document.getElementById('gen-stat').textContent = '桥没回原文（酒馆标签页可能被手机冻结了）：切回酒馆标签页停一下再回来重点生成';
+                    dlog('get-range-text 20秒没回，疑似桥标签页被冻', true);
+                }, 20000);
+                post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+            } else {
+                // [MP] 存档书离线路：原文从本地镜像取，不过桥；副API本来就是前台直发，全程不需要酒馆
+                document.getElementById('gen-stat').textContent = '读本地镜像…';
+                try {
+                    const text = await collectLocalRangeText(genChatKey, rs, re);
+                    await onRangeText({ reqId, rangeStart: rs, rangeEnd: re, text });
+                } catch (e) {
+                    if (genReqId !== reqId) return;
+                    genReqId = 0; genPhase = null;
+                    document.getElementById('btn-gen').disabled = false;
+                    document.getElementById('gen-stat').textContent = '取本地原文失败：' + (e && e.message || e);
+                }
+            }
         };
 
         // [MP] 第二阶段：原文回来了，网页自己直连酒馆后端发总结（前台，永不被冻）
@@ -2772,7 +2803,7 @@
             document.getElementById('sum-result').value = cleanTxt;
             document.getElementById('gen-stat').textContent = `已生成 ${payload.rangeStart}~${payload.rangeEnd}，可编辑`;
             document.getElementById('btn-save-summary').disabled = false;
-            document.getElementById('btn-apply').disabled = false;
+            document.getElementById('btn-apply').disabled = !selectedIsLive();   // [MP] 替换隐藏要改酒馆真实存档，离线书只能入库不能替换
         }
 
         async function summariesForChat(chatKey) {
@@ -3285,10 +3316,11 @@
             return rec;
         }
 
-        // [MP] 最新一卷总结正文（更早卷已替换进楼层，不重复注入）
-        async function latestSummaryText() {
-            if (!currentChatKey) return '';
-            const rows = await summariesForChat(currentChatKey);   // 已按卷号升序
+        // [MP] 最新一卷总结正文（更早卷已替换进楼层，不重复注入）。key 可传：档案生成用锁定的那把，防串对话
+        async function latestSummaryText(key) {
+            key = key || currentChatKey;
+            if (!key) return '';
+            const rows = await summariesForChat(key);   // 已按卷号升序
             if (!rows.length) return '';
             const last = rows[rows.length - 1];
             return last ? String(last.summaryText || '') : '';
@@ -3363,16 +3395,15 @@
             if (injEnabled && selectedIsLive()) await refreshInjection();
         };
 
-        // AI更新档案：两阶段，跟总结同一条路（桥取原文→前台直发副API），长请求不被手机冻
-        document.getElementById('btn-codex-gen').onclick = () => {
-            if (!selectedIsLive()) {
-                toast(selectedChatKey
-                    ? '这是历史存档对话，只读。要AI更新档案请在酒馆里打开它'
-                    : '还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
+        // AI更新档案：两阶段，跟总结同一条路。在线对话桥取原文；存档书直接读本地镜像，桥离线也能更新
+        document.getElementById('btn-codex-gen').onclick = async () => {
+            const live = selectedIsLive();
+            if (!live && !selectedChatKey) {
+                toast('还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
                 return;
             }
             if (codexReqId !== 0) { toast('档案更新已在进行，等它回来或超时'); return; }
-            if (!bridgeOnline) { toast('桥离线，无法取原文'); return; }
+            if (live && !bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('codex-start').value, 10);
             const re = parseInt(document.getElementById('codex-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
@@ -3380,20 +3411,33 @@
             if (!cfg.apiurl || !cfg.model) { toast('先填副API设置(apiurl/model)'); showScreen('v-settings'); return; }
             const reqId = ++genReqSeq;
             codexReqId = reqId; codexCfg = cfg;
-            codexChatKey = currentChatKey;
+            codexChatKey = live ? currentChatKey : selectedChatKey;
             codexExistingDoc = document.getElementById('codex-text').value || '';
             document.getElementById('btn-codex-gen').disabled = true;
-            document.getElementById('codex-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
-            if (codexTimer) clearTimeout(codexTimer);
-            codexTimer = setTimeout(() => {
-                codexTimer = null;
-                if (codexReqId !== reqId) return;
-                codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
-                document.getElementById('codex-stat').textContent = '桥没回原文（酒馆标签页可能被冻）：切回酒馆停一下再回来重点';
-                dlog('codex get-range-text 20秒没回，疑似桥被冻', true);
-            }, 20000);
-            dlog(`发 get-range-text(codex) ${rs}~${re} #${reqId}`);
-            post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+            if (codexTimer) { clearTimeout(codexTimer); codexTimer = null; }
+            if (live) {
+                document.getElementById('codex-stat').textContent = '取原文中…（问桥要区间文本，1秒内该回）';
+                codexTimer = setTimeout(() => {
+                    codexTimer = null;
+                    if (codexReqId !== reqId) return;
+                    codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                    document.getElementById('codex-stat').textContent = '桥没回原文（酒馆标签页可能被冻）：切回酒馆停一下再回来重点';
+                    dlog('codex get-range-text 20秒没回，疑似桥被冻', true);
+                }, 20000);
+                dlog(`发 get-range-text(codex) ${rs}~${re} #${reqId}`);
+                post('get-range-text', { reqId, rangeStart: rs, rangeEnd: re });
+            } else {
+                // [MP] 存档书离线路：本地镜像取原文，档案结果也只写回本地 codex 库，全程不碰酒馆
+                document.getElementById('codex-stat').textContent = '读本地镜像…';
+                try {
+                    const text = await collectLocalRangeText(codexChatKey, rs, re);
+                    await onCodexRangeText({ reqId, text });
+                } catch (e) {
+                    if (codexReqId !== reqId) return;
+                    codexReqId = 0; document.getElementById('btn-codex-gen').disabled = false;
+                    document.getElementById('codex-stat').textContent = '取本地原文失败：' + (e && e.message || e);
+                }
+            }
         };
 
         // 档案的第二阶段：原文回来，前台直发副API更新档案（流式实时写进档案框）
@@ -3408,7 +3452,7 @@
             const useStream = codexCfg && codexCfg.stream !== false;
             // [MP] 档案上下文增强：把最新一卷总结垫在最前当背景，让AI提炼时知道近期剧情走向，
             //      角色状态/世界事实不至于跟已发生的情节打架（借鉴柏宝书"先垫背景再抽取"）
-            const bgSum = (await latestSummaryText() || '').trim();
+            const bgSum = (await latestSummaryText(codexChatKey) || '').trim();   // [MP] 用锁定 key：离线书垫它自己的总结
             const userText =
                 (bgSum ? '【最新一卷剧情总结·仅作背景参考，勿并入档案】\n' + bgSum + '\n\n' : '')
                 + '【现有档案】\n' + (codexExistingDoc || '（暂无，请从零新建下列五张表：角色档案 / 世界设定 / 地点场景 / 时间线 / 线索悬念）')
@@ -3956,10 +4000,10 @@
             // [MP] 横幅分两种嘴：没开任何对话 ≠ 翻着历史存档，别对着空工作区讲"这是存档"
             const bn = document.getElementById('drawer-ro');
             if (bn && ro) bn.textContent = selectedChatKey
-                ? '历史存档对话（不是酒馆里正在打开的那个）。档案和总结可以照常查阅、编辑、保存。只有 AI 生成、替换隐藏、注入这几样需要在酒馆里打开它才能用。'
-                : '还没打开对话。到酒馆开一个蜜脾会自动跟过来，或点左上角 ☰ 从存档里挑一个查阅。AI 生成、替换隐藏、注入要等对话在线才能用。';
-            // [MP] 只有这几样真的要在线桥：AI生成要问桥要原文，注入/替换隐藏要改酒馆真实存档
-            const liveOnly = ['btn-codex-gen', 'btn-gen', 'inj-enabled', 'inj-pos', 'inj-depth'];
+                ? '历史存档对话（不是酒馆里正在打开的那个）。档案和总结照常查阅、编辑、保存；收进书架的书还能直接 AI 生成总结和档案（原文走本地镜像，不用开酒馆）。只有替换隐藏和注入需要在酒馆里打开它才能用。'
+                : '还没打开对话。到酒馆开一个蜜脾会自动跟过来，或点左上角 ☰ 从存档里挑一个查阅。替换隐藏、注入要等对话在线才能用。';
+            // [MP] 只有注入/替换隐藏真的要在线桥（要改酒馆真实存档）；AI生成两条线离线书走本地镜像，不再禁
+            const liveOnly = ['inj-enabled', 'inj-pos', 'inj-depth'];
             liveOnly.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
             // 替换隐藏改酒馆存档：存档态强制关；在线态交回它自己的启用逻辑
             if (ro) { const a = document.getElementById('btn-apply'); if (a) a.disabled = true; }
