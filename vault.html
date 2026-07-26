@@ -3217,7 +3217,7 @@
             document.getElementById('btn-codex-revert').disabled = !(rec && rec.prevDocText);
             document.getElementById('btn-codex-save').disabled = !ta.value.trim();   // [MP] 档案空就没得存，保存档案跟着灰掉
             document.getElementById('codex-meta').textContent = chatKey
-                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}${ta.value.length > 6000 ? ' · ⚠ 档案偏长，AI更新可能被截断，建议修剪时间线旧行' : ''}` : '本对话暂无档案')
+                ? (rec ? `已存 · ${ta.value.length}字 · ${rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : ''}` : '本对话暂无档案')
                 : '未选择对话';
             await renderViz(chatKey);   // [MP] 档案变了顺手刷可视化
         }
