@@ -1206,6 +1206,8 @@
             <button class="nav-item sub grp-sep" id="nav-settings"><span class="ti">⇄</span><span class="tl">副API设置</span></button>
             <button id="btn-export" class="nav-item sub" title="三表全量导出为JSON"><span class="ti">↥</span><span class="tl">导出全部</span></button>
             <button id="btn-import" class="nav-item sub"><span class="ti">↧</span><span class="tl">导入</span></button>
+            <button id="btn-backup" class="nav-item sub" title="把正文/总结/档案/书架全量备份到酒馆服务器"><span class="ti">☁</span><span class="tl">备份到服务器</span></button>
+            <button id="btn-restore" class="nav-item sub" title="取回服务器上最新一份备份"><span class="ti">↺</span><span class="tl">从服务器恢复</span></button>
             <button id="btn-skin" class="nav-item sub grp-sep" title="切换预设外观"><span class="ti">◈</span><span class="tl">外观</span></button>
         </div>
         <div class="nav-sep"></div>
@@ -4552,8 +4554,9 @@
         });
 
         // [MP] ============ 导出 / 导入 ============
-        document.getElementById('btn-export').onclick = async () => {
-            const data = {
+        // [MP] 全量数据包：文件导出和服务器备份共用同一个打包函数，两条路永远长一个样
+        async function buildExportData() {
+            return {
                 app: 'mellarium',
                 version: 1,
                 exportedAt: new Date().toISOString(),
@@ -4562,6 +4565,22 @@
                 codex: await getAll('codex'),
                 books: Array.from(bookKeys),   // [MP] 书架名单也带走，换手机导回去还是那几本书
             };
+        }
+        // [MP] 灌回数据包：文件导入和服务器恢复共用。prose/summaries 追加、codex 按聊天覆盖、书架名单并集
+        async function importDataPack(data) {
+            const n = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
+            for (const r of (data.prose || [])) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
+            for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
+            for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
+            // [MP] 书架名单并进来（合并不覆盖，别把这台机器上已有的书踢下架）
+            if (Array.isArray(data.books)) { data.books.forEach(k => bookKeys.add(k)); await saveBookKeys(); }
+            await renderCharTree();
+            if (selectedChatKey) await selectChat(selectedChatKey);
+            return n;
+        }
+
+        document.getElementById('btn-export').onclick = async () => {
+            const data = await buildExportData();
             // [MP] 不美化缩进：正文库大时 null,2 让字符串内存峰值直接翻倍，老 WebView 容易白屏
             const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -4581,22 +4600,112 @@
             try {
                 const data = JSON.parse(await file.text());
                 if (data.app !== 'mellarium') { toast('不是蜜脾导出文件'); return; }
-                const n = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
-                if (!confirm(`导入 ${n} 条记录？\nprose/summaries 追加，codex 按聊天覆盖。`)) return;
-                for (const r of (data.prose || [])) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
-                for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
-                for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
-                // [MP] 书架名单并进来（合并不覆盖，别把这台机器上已有的书踢下架）
-                if (Array.isArray(data.books)) { data.books.forEach(k => bookKeys.add(k)); await saveBookKeys(); }
+                const cnt = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
+                if (!confirm(`导入 ${cnt} 条记录？\nprose/summaries 追加，codex 按聊天覆盖。`)) return;
+                const n = await importDataPack(data);
                 toast(`已导入 ${n} 条`);
-                await renderCharTree();   // [MP] 导入后刷新侧栏
-                if (selectedChatKey) await selectChat(selectedChatKey);
             } catch (err) {
                 toast('导入失败：' + (err && err.message || err));
             } finally {
                 e.target.value = '';
             }
         };
+
+        // [MP] ============ 服务器备份（保命） ============
+        //   全部数据躺在手机浏览器的 IndexedDB 里，浏览器清个数据就一锅端。备份走酒馆自家文件接口
+        //   /api/files/upload（同源+CSRF，落在 VPS 的 user/files/，body 上限 500mb 管够），桥睡着也能备。
+        //   酒馆没有列表接口，用一个小索引文件 mellarium-backup-index.json 自己记账；
+        //   轮换保留 3 份——防的是"最新一份恰好备坏/备了个空库"把唯一后路顶掉。
+        const BK_INDEX = 'mellarium-backup-index.json';
+        const BK_KEEP = 3;
+        function bkPad(n) { return (n < 10 ? '0' : '') + n; }
+        // [MP] UTF-8 → base64，32K 一段喂 fromCharCode，几 MB 的整本书也不会爆调用栈
+        function bkB64(str) {
+            const bytes = new TextEncoder().encode(str);
+            let bin = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+            return btoa(bin);
+        }
+        async function bkUpload(name, str) {
+            const r = await fetch('/api/files/upload', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': await getCsrf() },
+                body: JSON.stringify({ name: name, data: bkB64(str) }),
+            });
+            if (!r.ok) throw new Error('上传失败（' + r.status + '）');
+        }
+        async function bkReadIndex() {
+            try {
+                const r = await fetch('/user/files/' + BK_INDEX, { credentials: 'same-origin', cache: 'no-store' });
+                if (!r.ok) return [];
+                const d = await r.json();
+                return Array.isArray(d && d.list) ? d.list : [];
+            } catch (e) { return []; }
+        }
+        async function bkDelete(name) {
+            try {
+                await fetch('/api/files/delete', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': await getCsrf() },
+                    body: JSON.stringify({ path: 'user/files/' + name }),
+                });
+            } catch (e) { /* 删旧份失败不致命，下一轮备份时再删 */ }
+        }
+        let bkBusy = false;
+        async function serverBackup(auto) {
+            if (bkBusy) { if (!auto) toast('备份正在进行'); return; }
+            bkBusy = true;
+            try {
+                const data = await buildExportData();
+                const cp = data.prose.length, cs = data.summaries.length, cc = data.codex.length;
+                if (cp + cs + cc === 0) {
+                    // [MP] 空库不备：清完浏览器数据后开机自动备一个空包，会把服务器上的好备份挨个顶掉
+                    if (!auto) toast('本地还没有数据，没什么可备份的');
+                    return;
+                }
+                if (!auto) toast('备份中…', 0);
+                const str = JSON.stringify(data);
+                const t = new Date();
+                const name = 'mellarium-backup-' + t.getFullYear() + bkPad(t.getMonth() + 1) + bkPad(t.getDate()) +
+                    '-' + bkPad(t.getHours()) + bkPad(t.getMinutes()) + bkPad(t.getSeconds()) + '.json';
+                await bkUpload(name, str);
+                let list = await bkReadIndex();
+                list.unshift({ name: name, at: t.toISOString(), bytes: str.length, prose: cp, summaries: cs, codex: cc, books: data.books.length });
+                const drop = list.slice(BK_KEEP);
+                list = list.slice(0, BK_KEEP);
+                await bkUpload(BK_INDEX, JSON.stringify({ app: 'mellarium-backup-index', list: list }));
+                for (const d of drop) await bkDelete(d.name);
+                try { localStorage.setItem('mp_last_backup', String(Date.now())); } catch (e) { }
+                const mb = (str.length / 1024 / 1024).toFixed(1);
+                toast((auto ? '每日自动备份完成：' : '已备份到酒馆服务器：') +
+                    `正文${cp}条·总结${cs}卷·档案${cc}份（${mb}MB，服务器留最近${BK_KEEP}份）`);
+                dlog('服务器备份完成 ' + name);
+            } catch (e) {
+                dlog('服务器备份失败: ' + (e && e.message || e), true);
+                toast((auto ? '每日自动备份没成功：' : '备份失败：') + (e && e.message || e) +
+                    (auto ? '。手动点一下「备份到服务器」试试' : ''));
+            } finally { bkBusy = false; }
+        }
+        async function serverRestore() {
+            try {
+                const list = await bkReadIndex();
+                if (!list.length) { toast('服务器上还没有备份。先点「备份到服务器」存一份'); return; }
+                const b = list[0];
+                const when = b.at ? new Date(b.at).toLocaleString() : '未知时间';
+                if (!confirm(`恢复服务器上最新的备份？\n${when}\n正文${b.prose != null ? b.prose : '?'}条 · 总结${b.summaries != null ? b.summaries : '?'}卷 · 档案${b.codex != null ? b.codex : '?'}份\n\nprose/summaries 追加、codex 按聊天覆盖，不清空现有数据。\n（服务器共 ${list.length} 份，更早的仍留着）`)) return;
+                toast('正在从服务器取回…', 0);
+                const r = await fetch('/user/files/' + b.name, { credentials: 'same-origin', cache: 'no-store' });
+                if (!r.ok) throw new Error('取备份文件失败（' + r.status + '）');
+                const data = await r.json();
+                if (data.app !== 'mellarium') throw new Error('备份文件格式不对');
+                const n = await importDataPack(data);
+                toast(`已从服务器恢复 ${n} 条`);
+            } catch (e) {
+                toast('恢复失败：' + (e && e.message || e));
+            }
+        }
+        document.getElementById('btn-backup').onclick = () => { serverBackup(false); };
+        document.getElementById('btn-restore').onclick = () => { serverRestore(); };
 
         // [MP] ============ toast ============
         let toastT = null;
@@ -4634,6 +4743,11 @@
             post('ping');
             dlog('已发ping，等桥应答');
             heartbeat();
+            // [MP] 每日自动备份：距上次备份超22小时，开机8秒后悄悄备一份（空库不备，serverBackup 内有护栏）
+            try {
+                const last = parseInt(localStorage.getItem('mp_last_backup') || '0', 10) || 0;
+                if (Date.now() - last > 22 * 3600 * 1000) setTimeout(function () { serverBackup(true); }, 8000);
+            } catch (e) { }
         })();
     </script>
 </body>
