@@ -530,7 +530,9 @@
                 guard++;
             }
             if (!el) { toast('没找到 ' + n + ' 楼，可能还没加载出来'); return; }
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // [MP] behavior 用 auto(瞬移)不用 smooth：smooth 是可取消动画，弹窗关闭后酒馆把焦点还给
+            //   聊天框、手机弹键盘挪视口，随便哪一下都能把 smooth 半路掐死(魔棒路径"弹不过去"的元凶)。
+            el.scrollIntoView({ behavior: 'auto', block: 'center' });
             const old = el.style.boxShadow;
             el.style.transition = 'box-shadow .25s';
             el.style.boxShadow = 'inset 0 0 0 3px #e6b04d';
@@ -556,6 +558,9 @@
             }
             const v = await c.callGenericPopup('跳到第几楼？（0 ~ ' + (cnt - 1) + '）', c.POPUP_TYPE.INPUT, '');
             if (v === null || v === false || v === undefined || String(v).trim() === '') return;
+            // 弹窗收尾还有一手：焦点还给聊天框、软键盘收起、视口回弹。等这套折腾完再跳，
+            // 免得刚跳到位又被键盘收起引发的布局回流拽走。
+            await sleep(350);
             jumpTo(parseInt(String(v).trim(), 10));
         }
 
