@@ -1429,6 +1429,7 @@
                     <option value="nostream">非流式（渠道不支持流式时用·卡了要等满一发）</option>
                 </select>
             </div>
+            <div class="srow"><label>max_tokens（单次输出上限，留空默认 8192）</label><input type="number" id="s-maxtok" min="1" placeholder="留空=8192；Claude 可填 32768 甚至更大" /></div>
             <div class="srow"><label>破限提示词（系统·所有请求通用，可留空）</label><textarea id="s-jailbreak" rows="6" placeholder="给副API的破限/越权系统提示，会加在总结和档案请求最前面。不需要就留空。"></textarea></div>
             <div class="srow inline"><button class="primary" id="btn-save-settings">保存设置</button><button id="btn-test-api">测试连通</button><button id="btn-direct-test">直连测试</button></div>
             <div id="api-status" class="api-status">状态：未测试</div>
@@ -2225,6 +2226,7 @@
                 source: document.getElementById('s-source').value || 'openai',
                 stream: document.getElementById('s-stream').value !== 'nostream', // [MP] 默认流式
                 jailbreak: document.getElementById('s-jailbreak').value || '',     // [MP] 破限系统提示，加在最前
+                maxTokens: parseInt(document.getElementById('s-maxtok').value, 10) || 0,   // [MP] 0=留空，请求时兜底 8192
             };
         }
 
@@ -2241,6 +2243,7 @@
             document.getElementById('s-key').value = p.key || '';
             document.getElementById('s-model').value = p.model || '';
             document.getElementById('s-stream').value = (p.stream === false) ? 'nostream' : 'stream'; // [MP] 默认流式
+            document.getElementById('s-maxtok').value = (Number(p.maxTokens) > 0) ? String(p.maxTokens) : '';   // [MP] 按地址各存各的
         }
 
         function readFieldsToPreset() {
@@ -2251,6 +2254,7 @@
                 key: document.getElementById('s-key').value,
                 model: document.getElementById('s-model').value.trim(),
                 stream: document.getElementById('s-stream').value !== 'nostream', // [MP] 默认流式
+                maxTokens: parseInt(document.getElementById('s-maxtok').value, 10) || 0,   // [MP] 0=留空，请求时兜底 8192
             };
         }
 
