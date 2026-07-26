@@ -1152,6 +1152,9 @@
         /* [MP-美化] 卡内顶端分隔线：深金实线，满宽从左到右（其它分隔线才用灰渐变） */
         .pane-title::after { content: ""; position: absolute; left: -14px; right: -14px; bottom: 0; height: 1.5px; border-radius: 1px; background: var(--accent2); opacity: .48; }
         .pane-title svg { width: 18px; height: 18px; fill: currentColor; flex: 0 0 auto; }
+        /* [MP] 分类抽屉标题行右侧的「注入」勾：勾了的表才进注入文本 */
+        .inj-toggle { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 400; color: var(--muted); }
+        .inj-toggle input { margin: 0; }
         /* [MP-美化] 一览面板里每张表的小标题：图标+名字，段与段之间留气口 */
         .viz-sec + .viz-sec { margin-top: 18px; padding-top: 16px; border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--fill-2) 18%, var(--fill-2) 82%, transparent) 1; }
         .viz-sec-h { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--accent); }
@@ -1364,13 +1367,6 @@
                         </label>
                         <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
                         <span class="floor-meta" id="inj-stat"></span>
-                    </div>
-                    <div class="srow inline inject-row" id="inj-tables">
-                        <label><input type="checkbox" id="inj-t-char" checked /> 角色</label>
-                        <label><input type="checkbox" id="inj-t-world" checked /> 世界</label>
-                        <label><input type="checkbox" id="inj-t-place" checked /> 地点</label>
-                        <label><input type="checkbox" id="inj-t-time" checked /> 时间线</label>
-                        <label><input type="checkbox" id="inj-t-clue" checked /> 线索</label>
                     </div>
                     <button class="pane-close">▲ 收起</button>
                 </div>
@@ -2331,9 +2327,9 @@
             document.getElementById('inj-enabled').checked = !!injEnabled;
             document.getElementById('inj-pos').value = String(injPos);
             document.getElementById('inj-depth').value = String(injDepth);
-            // [MP] 五表选择性注入：默认全勾
+            // [MP] 五表选择性注入：默认全勾；抽屉可能先画了默认态，载入后对齐一遍
             injTables = Object.assign({ char: true, world: true, place: true, time: true, clue: true }, (await getSetting('injTables', null)) || {});
-            INJ_TABLE_MAP.forEach(t => { document.getElementById(t.id).checked = !!injTables[t.k]; });
+            document.querySelectorAll('.inj-toggle input').forEach(cb => { cb.checked = !!injTables[cb.dataset.injkey]; });
         }
 
 
@@ -3300,6 +3296,29 @@
         }
 
         // [MP] 可视化：把档案里十几个细碎小节按关键字归进 人物/世界观/地点/线索 四大类，一类一个标签
+        // [MP] 五大分类共用注册表：renderViz 分抽屉、注入过滤按同一套正则认领——抽屉里看到什么，它的开关就管什么
+        const MP_CATS = [
+            { key: 'char', label: '人物', icon: 'person', re: /人物|角色|人设|关系|阵营|主角|配角|好感|羁绊|情感|态度/ },
+            { key: 'world', label: '世界观', icon: 'globe', re: /世界|设定|背景|机制|规则|体系|力量|观念|风俗|历史|组织|派系|势力/ },
+            { key: 'place', label: '地点', icon: 'pin', re: /地点|场景|地图|舞台|地理|区域|建筑|据点/ },
+            { key: 'time', label: '时间线', icon: 'clock', re: /时间线|时间轴|时间表|时序|年表|大事记|事件|进程|历程/ },
+            { key: 'clue', label: '线索', icon: 'search', re: /线索|悬念|伏笔|谜|疑|进展|冲突|矛盾|任务|关键/ },
+        ];
+        function catForTitle(title) { return MP_CATS.find(c => c.re.test(title)) || MP_CATS[1]; }   // 认不出兜底世界观
+        // [MP] 五表选择性注入：每个分类抽屉标题行有「注入」勾，摘了勾该表就不进注入文本
+        let injTables = { char: true, world: true, place: true, time: true, clue: true };
+        function filterCodexForInjection(docText) {
+            const lines = String(docText || '').split('\n');
+            const out = [];
+            let keep = true;
+            lines.forEach(line => {
+                const m = /^#{1,6}\s+(.*)$/.exec(line.trim());
+                if (m) keep = !!injTables[catForTitle(m[1]).key];
+                if (keep) out.push(line);
+            });
+            return out.join('\n').trim();
+        }
+
         async function renderViz(chatKey) {
             chatKey = chatKey || selectedChatKey;
             const bar = document.getElementById('fold-cats');   // [MP-美化] 分类标签进浅底那撮
@@ -3321,14 +3340,8 @@
                 else if (line.trim()) { cur = { title: '', body: [line] }; sections.push(cur); }
             });
             // [MP-美化] 五大类常驻：不管档案里有没有内容，标签固定摆着，空的摆占位；认不出的兜底进「世界观」
-            const cats = [
-                { label: '人物', icon: 'person', re: /人物|角色|人设|关系|阵营|主角|配角|好感|羁绊|情感|态度/, secs: [] },
-                { label: '世界观', icon: 'globe', re: /世界|设定|背景|机制|规则|体系|力量|观念|风俗|历史|组织|派系|势力/, secs: [] },
-                { label: '地点', icon: 'pin', re: /地点|场景|地图|舞台|地理|区域|建筑|据点/, secs: [] },
-                { label: '时间线', icon: 'clock', re: /时间线|时间轴|时间表|时序|年表|大事记|事件|进程|历程/, secs: [] },
-                { label: '线索', icon: 'search', re: /线索|悬念|伏笔|谜|疑|进展|冲突|矛盾|任务|关键/, secs: [] }
-            ];
-            const fallback = cats[1];   // 认不出的归世界观，绝不另开筐
+            const cats = MP_CATS.map(function (c) { return { key: c.key, label: c.label, icon: c.icon, re: c.re, secs: [] }; });
+            const fallback = cats[1];   // 认不出的归世界观，绝不另开筐（与 catForTitle 同口径）
             sections.forEach(s => {
                 const c = cats.find(c => c.re.test(s.title)) || fallback;
                 c.secs.push(s);
@@ -3351,7 +3364,8 @@
                 });
                 if (!body) body = '<div class="empty">（暂无内容，AI更新档案后会自动归到这里）</div>';   // [MP-美化] 空类占位
                 // [MP-美化] 面板顶上放类名标识（标签栏纯图标，靠这个认）
-                const html = '<div class="pane-title">' + mpIcon(c.icon) + '<span>' + esc(c.label) + '</span></div>' + body;
+                const html = '<div class="pane-title">' + mpIcon(c.icon) + '<span>' + esc(c.label) + '</span>'
+                    + '<label class="inj-toggle"><input type="checkbox" data-injkey="' + c.key + '"' + (injTables[c.key] ? ' checked' : '') + ' /> 注入</label></div>' + body;
                 const pane = document.createElement('div');
                 pane.className = 'fold-pane';
                 pane.id = 'pane-viz-' + c.label;
@@ -3392,30 +3406,6 @@
             return last ? String(last.summaryText || '') : '';
         }
 
-        // [MP] 五表选择性注入：勾了的表才进注入文本。按「## 标题」切段过滤，认不出的段一律保留（宁多勿丢）
-        let injTables = { char: true, world: true, place: true, time: true, clue: true };
-        const INJ_TABLE_MAP = [
-            { id: 'inj-t-char', k: 'char', re: /角色/ },
-            { id: 'inj-t-world', k: 'world', re: /世界/ },
-            { id: 'inj-t-place', k: 'place', re: /地点|场景/ },
-            { id: 'inj-t-time', k: 'time', re: /时间/ },
-            { id: 'inj-t-clue', k: 'clue', re: /线索|悬念/ },
-        ];
-        function filterCodexForInjection(docText) {
-            const lines = String(docText || '').split('\n');
-            const out = [];
-            let keep = true;
-            lines.forEach(line => {
-                const m = /^#{1,6}\s+(.*)$/.exec(line.trim());
-                if (m) {
-                    const hit = INJ_TABLE_MAP.find(t => t.re.test(m[1]));
-                    keep = hit ? !!injTables[hit.k] : true;
-                }
-                if (keep) out.push(line);
-            });
-            return out.join('\n').trim();
-        }
-
         // [MP] 把「当前档案 + 最新一卷总结」推给桥去注入；关了就发 enabled:false 让桥清空。
         //   档案读库里存的版本，不读档案框：框里可能是没保存的草稿、甚至是你正翻着的另一个对话的档案，
         //   而落点标记卡片显示的就是库里版本——注入什么、卡片说什么，口径必须是同一个。
@@ -3449,13 +3439,13 @@
             if (injEnabled) await refreshInjection();
             await updateInjectMarker();
         };
-        // [MP] 五表勾选：改了就存，注入开着就立刻重推
-        INJ_TABLE_MAP.forEach(t => {
-            document.getElementById(t.id).onchange = async (e) => {
-                injTables[t.k] = e.target.checked;
-                await putSetting('injTables', injTables);
-                if (injEnabled) await refreshInjection();
-            };
+        // [MP] 分类抽屉标题行的「注入」勾：委托到抽屉上，renderViz 重建面板不掉线
+        document.getElementById('drawer').addEventListener('change', async (e) => {
+            const cb = e.target && e.target.closest ? e.target.closest('.inj-toggle input') : null;
+            if (!cb) return;
+            injTables[cb.dataset.injkey] = cb.checked;
+            await putSetting('injTables', injTables);
+            if (injEnabled) await refreshInjection();
         });
 
         // [MP] 档案框有字才能点保存，边打边同步
@@ -4100,7 +4090,7 @@
                 ? '历史存档对话（不是酒馆里正在打开的那个）。档案和总结照常查阅、编辑、保存；收进书架的书还能直接 AI 生成总结和档案（原文走本地镜像，不用开酒馆）。只有替换隐藏和注入需要在酒馆里打开它才能用。'
                 : '还没打开对话。到酒馆开一个蜜脾会自动跟过来，或点左上角 ☰ 从存档里挑一个查阅。替换隐藏、注入要等对话在线才能用。';
             // [MP] 只有注入/替换隐藏真的要在线桥（要改酒馆真实存档）；AI生成两条线离线书走本地镜像，不再禁
-            const liveOnly = ['inj-enabled', 'inj-pos', 'inj-depth', 'inj-t-char', 'inj-t-world', 'inj-t-place', 'inj-t-time', 'inj-t-clue'];
+            const liveOnly = ['inj-enabled', 'inj-pos', 'inj-depth'];
             liveOnly.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
             // 替换隐藏改酒馆存档：存档态强制关；在线态交回它自己的启用逻辑
             if (ro) { const a = document.getElementById('btn-apply'); if (a) a.disabled = true; }
