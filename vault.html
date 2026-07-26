@@ -2526,13 +2526,14 @@
         // [MP] 生成两阶段：①拿区间原文——在线对话问桥要（秒回短活），存档书直接读本地镜像，桥离线也能总结
         //      ②网页自己直连副API发总结。长请求留在前台网页发，手机切来切去都不会把它冻死。
         document.getElementById('btn-gen').onclick = async () => {
-            const live = selectedIsLive();
+            // [MP] 桥离线时"在线"对话也走书架镜像路：启动恢复的 currentChatKey 在酒馆关了之后还留着，
+            //   selectedIsLive 会误报在线，别被它骗去走桥然后撞"桥离线"的墙
+            const live = selectedIsLive() && bridgeOnline;
             if (!live && !selectedChatKey) {
                 toast('还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
                 return;
             }
             if (genReqId !== 0) { toast('已有一段在生成中，等它回来或超时再点'); return; } // [MP] 在飞就别再发
-            if (live && !bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('sum-start').value, 10);
             const re = parseInt(document.getElementById('sum-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
@@ -3397,13 +3398,12 @@
 
         // AI更新档案：两阶段，跟总结同一条路。在线对话桥取原文；存档书直接读本地镜像，桥离线也能更新
         document.getElementById('btn-codex-gen').onclick = async () => {
-            const live = selectedIsLive();
+            const live = selectedIsLive() && bridgeOnline;   // [MP] 桥离线一律走镜像路，同 btn-gen 的理由
             if (!live && !selectedChatKey) {
                 toast('还没打开对话：到酒馆开一个，或点左上角 ☰ 从存档里挑一个');
                 return;
             }
             if (codexReqId !== 0) { toast('档案更新已在进行，等它回来或超时'); return; }
-            if (live && !bridgeOnline) { toast('桥离线，无法取原文'); return; }
             const rs = parseInt(document.getElementById('codex-start').value, 10);
             const re = parseInt(document.getElementById('codex-end').value, 10);
             if (!Number.isInteger(rs) || !Number.isInteger(re) || rs > re) { toast('区间非法'); return; }
