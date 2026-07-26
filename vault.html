@@ -1365,6 +1365,13 @@
                         <label>深度 <input type="number" id="inj-depth" min="0" value="4" style="width:64px" /></label>
                         <span class="floor-meta" id="inj-stat"></span>
                     </div>
+                    <div class="srow inline inject-row" id="inj-tables">
+                        <label><input type="checkbox" id="inj-t-char" checked /> 角色</label>
+                        <label><input type="checkbox" id="inj-t-world" checked /> 世界</label>
+                        <label><input type="checkbox" id="inj-t-place" checked /> 地点</label>
+                        <label><input type="checkbox" id="inj-t-time" checked /> 时间线</label>
+                        <label><input type="checkbox" id="inj-t-clue" checked /> 线索</label>
+                    </div>
                     <button class="pane-close">▲ 收起</button>
                 </div>
             </div>
@@ -2324,6 +2331,9 @@
             document.getElementById('inj-enabled').checked = !!injEnabled;
             document.getElementById('inj-pos').value = String(injPos);
             document.getElementById('inj-depth').value = String(injDepth);
+            // [MP] 五表选择性注入：默认全勾
+            injTables = Object.assign({ char: true, world: true, place: true, time: true, clue: true }, (await getSetting('injTables', null)) || {});
+            INJ_TABLE_MAP.forEach(t => { document.getElementById(t.id).checked = !!injTables[t.k]; });
         }
 
 
@@ -3382,6 +3392,30 @@
             return last ? String(last.summaryText || '') : '';
         }
 
+        // [MP] 五表选择性注入：勾了的表才进注入文本。按「## 标题」切段过滤，认不出的段一律保留（宁多勿丢）
+        let injTables = { char: true, world: true, place: true, time: true, clue: true };
+        const INJ_TABLE_MAP = [
+            { id: 'inj-t-char', k: 'char', re: /角色/ },
+            { id: 'inj-t-world', k: 'world', re: /世界/ },
+            { id: 'inj-t-place', k: 'place', re: /地点|场景/ },
+            { id: 'inj-t-time', k: 'time', re: /时间/ },
+            { id: 'inj-t-clue', k: 'clue', re: /线索|悬念/ },
+        ];
+        function filterCodexForInjection(docText) {
+            const lines = String(docText || '').split('\n');
+            const out = [];
+            let keep = true;
+            lines.forEach(line => {
+                const m = /^#{1,6}\s+(.*)$/.exec(line.trim());
+                if (m) {
+                    const hit = INJ_TABLE_MAP.find(t => t.re.test(m[1]));
+                    keep = hit ? !!injTables[hit.k] : true;
+                }
+                if (keep) out.push(line);
+            });
+            return out.join('\n').trim();
+        }
+
         // [MP] 把「当前档案 + 最新一卷总结」推给桥去注入；关了就发 enabled:false 让桥清空。
         //   档案读库里存的版本，不读档案框：框里可能是没保存的草稿、甚至是你正翻着的另一个对话的档案，
         //   而落点标记卡片显示的就是库里版本——注入什么、卡片说什么，口径必须是同一个。
@@ -3389,7 +3423,7 @@
             if (!bridgeOnline) { document.getElementById('inj-stat').textContent = '桥离线，注入待桥上线'; return; }
             if (!injEnabled) { post('set-injection', { enabled: false }); return; }
             const rec = currentChatKey ? await loadCodexRecord(currentChatKey) : null;
-            const codexText = (rec && rec.docText) || '';
+            const codexText = filterCodexForInjection((rec && rec.docText) || '');   // [MP] 只注入勾选的表
             const summaryText = await latestSummaryText();
             post('set-injection', {
                 enabled: true, codexText, summaryText,
@@ -3415,6 +3449,14 @@
             if (injEnabled) await refreshInjection();
             await updateInjectMarker();
         };
+        // [MP] 五表勾选：改了就存，注入开着就立刻重推
+        INJ_TABLE_MAP.forEach(t => {
+            document.getElementById(t.id).onchange = async (e) => {
+                injTables[t.k] = e.target.checked;
+                await putSetting('injTables', injTables);
+                if (injEnabled) await refreshInjection();
+            };
+        });
 
         // [MP] 档案框有字才能点保存，边打边同步
         document.getElementById('codex-text').addEventListener('input', () => {
@@ -4058,7 +4100,7 @@
                 ? '历史存档对话（不是酒馆里正在打开的那个）。档案和总结照常查阅、编辑、保存；收进书架的书还能直接 AI 生成总结和档案（原文走本地镜像，不用开酒馆）。只有替换隐藏和注入需要在酒馆里打开它才能用。'
                 : '还没打开对话。到酒馆开一个蜜脾会自动跟过来，或点左上角 ☰ 从存档里挑一个查阅。替换隐藏、注入要等对话在线才能用。';
             // [MP] 只有注入/替换隐藏真的要在线桥（要改酒馆真实存档）；AI生成两条线离线书走本地镜像，不再禁
-            const liveOnly = ['inj-enabled', 'inj-pos', 'inj-depth'];
+            const liveOnly = ['inj-enabled', 'inj-pos', 'inj-depth', 'inj-t-char', 'inj-t-world', 'inj-t-place', 'inj-t-time', 'inj-t-clue'];
             liveOnly.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!ro; });
             // 替换隐藏改酒馆存档：存档态强制关；在线态交回它自己的启用逻辑
             if (ro) { const a = document.getElementById('btn-apply'); if (a) a.disabled = true; }
