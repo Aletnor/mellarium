@@ -671,7 +671,7 @@
 
     // [MP] 重放全部结算记录 → 当前状态。attr/bar 是绝对值（自愈：错一个月下月覆盖），money 支持±增量。
     function rpgReplay(data) {
-        const st = { attrs: {}, bars: {}, money: 500, skills: [], rep: {}, status: [], events: [] };
+        const st = { attrs: {}, bars: {}, money: 500, skills: [], rep: {}, rel: {}, status: [], events: [] };
         data.cfg.attrs.forEach(function (a) { st.attrs[a] = RPG_ATTR_INIT[a] != null ? RPG_ATTR_INIT[a] : 30; });
         data.cfg.bars.forEach(function (b) { st.bars[b.key] = [0, b.max]; });
         const recs = data.records.slice().sort(function (a, b) { return a.floor - b.floor; });
@@ -710,6 +710,18 @@
             } else if (line.startsWith('rep:')) {
                 const m = line.substring(4).match(/^(.+?)=(-?\d+)$/);
                 if (m) st.rep[m[1].trim()] = parseInt(m[2], 10);
+            } else if (line.startsWith('rel-:')) {
+                delete st.rel[line.substring(5).trim()];
+            } else if (line.startsWith('rel:')) {
+                const m = line.substring(4).match(/^(.+?)=(-?\d+)(?:\|(.*))?$/);
+                if (m) {
+                    const name = m[1].trim();
+                    const old = st.rel[name];
+                    st.rel[name] = {
+                        v: Math.max(0, Math.min(100, parseInt(m[2], 10))),
+                        tag: (m[3] || '').trim() || (old ? old.tag : ''),
+                    };
+                }
             } else if (line.startsWith('status:')) {
                 const v = line.substring(7).trim();
                 st.status = (!v || /^(正常|无|none|normal)$/i.test(v))
@@ -730,6 +742,10 @@
         if (st.skills.length) lines.push('技能：' + st.skills.map(function (s) { return s.name + (s.level ? 'Lv' + s.level : ''); }).join('、'));
         const repKeys = Object.keys(st.rep);
         if (repKeys.length) lines.push('声望：' + repKeys.map(function (k) { return k + st.rep[k]; }).join('、'));
+        const relKeys = Object.keys(st.rel);
+        if (relKeys.length) lines.push('人际(好感0~100)：' + relKeys.map(function (k) {
+            const r = st.rel[k]; return k + (r.tag ? '(' + r.tag + ')' : '') + r.v;
+        }).join('、'));
         lines.push('状态：' + (st.status.length ? st.status.join('/') : '正常'));
         return lines.join('\n');
     }
@@ -834,6 +850,7 @@
             '- 数值贴合正文：训练/上课提升对应属性并抬升疲劳压力，休息玩耍回落，重大剧情可大幅波动；正文没涉及的属性保持原值。单月单项常规变化1~15。',
             '- bar 行输出 当前/上限。money 用+或-记本月收支，没有收支不写。',
             '- 技能仅习得/升级/失去时写；声望仅变化时写。',
+            '- rel 记女儿的人际好感（0~100，绝对值），本月有互动或关系变化的人物才写；新人物首次出现附上关系（如 rel:里德=35|剑术老师）；彻底断绝往来用 rel-:人名。',
             '- status 记当前生效的异常（生病/受伤/情绪问题等），没有写 正常。',
             '- event 一句话概括本月大事，20字内，必写。',
             '',
@@ -845,6 +862,7 @@
             'skill:技能名|等级|一句话说明',
             'skill-:失去的技能名',
             'rep:阵营=数值',
+            'rel:人名=好感|关系',
             'status:正常',
             'event:本月大事',
             '</mprpg>',
@@ -860,7 +878,7 @@
         else if (/^attr:/m.test(s)) block = s;
         if (!block) return null;
         const lines = block.split('\n').map(function (l) { return l.trim(); })
-            .filter(function (l) { return /^(attr|bar|money|skill|skill-|rep|status|event):/.test(l); });
+            .filter(function (l) { return /^(attr|bar|money|skill|skill-|rep|rel|rel-|status|event):/.test(l); });
         return lines.length ? lines : null;
     }
 
@@ -1050,6 +1068,9 @@
         if (rpgPanelOpen()) return;
         const mask = document.createElement('div');
         mask.id = 'mp_rpg_mask';
+        // [MP] Miel的WebView不认 inset 简写，样式表指不上，遮罩全屏＋居中直接内联写死
+        mask.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;box-sizing:border-box;'
+            + 'z-index:10000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
         mask.addEventListener('click', function (e) { if (e.target === mask) mask.remove(); });
         mask.innerHTML = '<div id="mp_rpg_card"></div>';
         document.body.appendChild(mask);
@@ -1093,23 +1114,34 @@
         });
         h += '<div class="mp-rpg-row"><span class="mp-rpg-k">' + rpgEsc(data.cfg.moneyName) + '</span><span style="color:#e6b04d">' + st.money + '</span>'
             + '<span style="margin-left:auto;opacity:.75">' + rpgEsc(st.status.length ? st.status.join('/') : '状态良好') + '</span></div>';
-        if (st.skills.length) {
-            h += '<div class="mp-rpg-sec">技能</div><div class="mp-rpg-chips">'
-                + st.skills.map(function (s) {
-                    return '<span class="mp-rpg-chip2" title="' + rpgEsc(s.desc) + '">' + rpgEsc(s.name) + (s.level ? '·Lv' + rpgEsc(s.level) : '') + '</span>';
-                }).join('') + '</div>';
-        }
+        h += '<div class="mp-rpg-sec">技能</div>';
+        h += st.skills.length
+            ? '<div class="mp-rpg-chips">' + st.skills.map(function (s) {
+                return '<span class="mp-rpg-chip2" title="' + rpgEsc(s.desc) + '">' + rpgEsc(s.name) + (s.level ? '·Lv' + rpgEsc(s.level) : '') + '</span>';
+            }).join('') + '</div>'
+            : '<div class="mp-rpg-ev" style="opacity:.45">还没学会任何技能</div>';
+        const relKeys = Object.keys(st.rel);
+        h += '<div class="mp-rpg-sec">人际</div>';
+        h += relKeys.length
+            ? '<div class="mp-rpg-chips">' + relKeys.map(function (k) {
+                const r = st.rel[k];
+                return '<span class="mp-rpg-chip2"' + (r.tag ? ' title="' + rpgEsc(r.tag) + '"' : '') + '>'
+                    + rpgEsc(k) + ' ♥' + r.v + (r.tag ? ' <span style="opacity:.6">' + rpgEsc(r.tag) + '</span>' : '') + '</span>';
+            }).join('') + '</div>'
+            : '<div class="mp-rpg-ev" style="opacity:.45">还没结识什么人</div>';
         const repKeys = Object.keys(st.rep);
-        if (repKeys.length) {
-            h += '<div class="mp-rpg-sec">声望</div><div class="mp-rpg-chips">'
-                + repKeys.map(function (k) { return '<span class="mp-rpg-chip2">' + rpgEsc(k) + ' ' + st.rep[k] + '</span>'; }).join('') + '</div>';
-        }
+        h += '<div class="mp-rpg-sec">声望</div>';
+        h += repKeys.length
+            ? '<div class="mp-rpg-chips">' + repKeys.map(function (k) { return '<span class="mp-rpg-chip2">' + rpgEsc(k) + ' ' + st.rep[k] + '</span>'; }).join('') + '</div>'
+            : '<div class="mp-rpg-ev" style="opacity:.45">默默无闻</div>';
+        h += '<div class="mp-rpg-sec">大事记</div>';
         if (st.events.length) {
-            h += '<div class="mp-rpg-sec">大事记</div>';
             st.events.slice(-6).reverse().forEach(function (e) {
                 const c2 = rpgCalendar(data, e.i);
                 h += '<div class="mp-rpg-ev">' + c2.year + '年' + c2.month + '月　' + rpgEsc(e.text) + '</div>';
             });
+        } else {
+            h += '<div class="mp-rpg-ev" style="opacity:.45">第一个月还没过完</div>';
         }
         h += '<div class="mp-rpg-btns">'
             + '<div class="mp-rpg-btn gold" id="mp_rpg_catchup">补结算</div>'
