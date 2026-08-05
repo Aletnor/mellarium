@@ -2152,6 +2152,85 @@
             return true;
         }
 
+        // [MP] ============ 镜像自检 + 自愈（2026-08-05 「702楼」增殖事故后加） ============
+        //   事故：Miel 手机的 WebView 上，mirrorBook 的「删旧行」63 次全部静默失效、「写新行」每次成功，
+        //   一本 14 楼的书被一天之内追加成 702 行（id 1921-2622 连号，一条没删掉）。代码逻辑已逐行排除，
+        //   病根在这台内核的 IndexedDB 原语。此函数每次启动全表扫一遍：
+        //   ① 发现同一本书同一楼有多条镜像 → 判定增殖；
+        //   ② 探针 A/B 现场测「索引查询」「按 id 删除」两个原语哪个是坏的，结果写进调试日志（截图发 Claude）；
+        //   ③ 自愈：每楼只留最新一条；常规删除清不掉就换 clear 整库重写（另一条原语，不指望坏掉的那条）。
+        //   库干净时只花一次全表读，静默通过。
+        async function mirrorSelfHeal() {
+            if (!db) return;
+            let all;
+            try { all = await getAll('prose'); } catch (e) { dlog('镜像自检: 全表读取失败 ' + e, true); return; }
+            const byKey = new Map();
+            for (const r of all) {
+                if (!r || r.kind !== 'mirror') continue;
+                if (!byKey.has(r.chatKey)) byKey.set(r.chatKey, []);
+                byKey.get(r.chatKey).push(r);
+            }
+            const sick = [];
+            for (const ent of byKey) {
+                const rows = ent[1];
+                const floors = new Set(rows.map(r => r.floorIndex));
+                if (rows.length > floors.size) sick.push({ key: ent[0], rows: rows, nf: floors.size });
+            }
+            if (!sick.length) return;
+            dlog('【镜像自检】发现 ' + sick.length + ' 本书的镜像在增殖', true);
+            // ---- 探针 A：索引查询是不是好的（拿病得最重那本试，全表数是地面真值） ----
+            try {
+                const s0 = sick[0];
+                const viaIdx = await proseForChat(s0.key);
+                const ok = viaIdx.length === s0.rows.length + all.filter(r => r && r.chatKey === s0.key && r.kind !== 'mirror').length;
+                dlog('探针A 索引查询: 查到' + viaIdx.length + '条 / 全表实有' + s0.rows.length + '条镜像'
+                    + (ok ? '（索引现在是好的）' : '（索引坏！查不全，这可能就是病根）'), !ok);
+            } catch (e) { dlog('探针A 索引查询直接抛错: ' + e, true); }
+            // ---- 探针 B：写一条哨兵→索引找它→按 id 删它→全表验尸 ----
+            try {
+                const pid = await idbReq(tx('prose', 'readwrite').add({ chatKey: '__mp_probe__', kind: 'probe', floorIndex: 0, savedAt: Date.now() }));
+                let seen = [];
+                try { seen = await proseForChat('__mp_probe__'); } catch (e) { }
+                try { await idbReq(tx('prose', 'readwrite').delete(pid)); } catch (e) { dlog('探针B 删除请求抛错: ' + e, true); }
+                const left = (await getAll('prose')).filter(r => r && r.chatKey === '__mp_probe__').length;
+                dlog('探针B 哨兵: 写入id=' + pid + '，索引见' + seen.length + '条，按id删后全表残留' + left + '条'
+                    + (left ? '（删除坏！这就是增殖病根）' : '（删除现在是好的）'), !!left);
+            } catch (e) { dlog('探针B 抛错: ' + e, true); }
+            // ---- 自愈：每本每楼只留最新一条（savedAt 大者胜，平局比 id） ----
+            for (const s of sick) {
+                const best = new Map();
+                for (const r of s.rows) {
+                    const b = best.get(r.floorIndex);
+                    if (!b || (r.savedAt || 0) > (b.savedAt || 0) || ((r.savedAt || 0) === (b.savedAt || 0) && r.id > b.id)) best.set(r.floorIndex, r);
+                }
+                const keepIds = new Set();
+                best.forEach(r => keepIds.add(r.id));
+                const loserIds = s.rows.filter(r => !keepIds.has(r.id)).map(r => r.id);
+                try {
+                    const store = tx('prose', 'readwrite');
+                    let last = null;
+                    for (const id of loserIds) last = store.delete(id);
+                    if (last) await idbReq(last);
+                } catch (e) { dlog('清扫: 常规删除抛错: ' + e, true); }
+                let left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
+                if (left > s.nf) {
+                    // [MP] 按 id 删不动（正是事故里的症状）→ 换 clear 整库重写。哨兵尸体(kind='probe')也顺手扔掉
+                    dlog('清扫: 按id删除清不掉（还剩' + left + '条），改走 clear 整库重写', true);
+                    const survivors = (await getAll('prose')).filter(r => r && r.kind !== 'probe'
+                        && !(r.chatKey === s.key && r.kind === 'mirror' && !keepIds.has(r.id)));
+                    const store = tx('prose', 'readwrite');
+                    store.clear();
+                    let last = null;
+                    for (const sv of survivors) last = store.put(sv);
+                    if (last) await idbReq(last);
+                    left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
+                }
+                dlog('【镜像自检】' + (splitChatKey(s.key).chat || s.key) + '：' + s.rows.length + '条 → ' + left + '条（应为' + s.nf + '楼）', left !== s.nf);
+            }
+            lastMirrorSig.clear();   // [MP] 库被清扫过，旧指纹作废，下次镜像重新对账
+            toast('蜜脾自检：清掉了增殖的重复镜像。请打开设置里的调试日志，把「探针」两行截图发给Claude');
+        }
+
         // [MP] 从本地拼回一本书，喂给 render() 用。结构跟桥的实时快照对齐，正文区那套代码一份通吃。
         async function loadBookSnapshot(chatKey) {
             const rows = (await proseForChat(chatKey)).filter(r => r.kind === 'mirror');
@@ -5062,6 +5141,7 @@
             try { await initBgLibrary(); } catch (e) { dlog('背景库载入失败: ' + e, true); } // [MP-美化] 载入背景库并铺上已选背景
             try { await loadSettings(); dlog('设置已载入'); } catch (e) { dlog('设置载入失败: ' + e, true); }
             try { await loadBookKeys(); dlog('书架名单已载入，' + bookKeys.size + ' 本'); } catch (e) { dlog('书架名单载入失败: ' + e, true); }
+            try { await mirrorSelfHeal(); } catch (e) { dlog('镜像自检失败: ' + e, true); } // [MP] 702楼增殖事故的探针+清扫，库干净时静默通过
             try { await renderCharTree(); } catch (e) { dlog('角色树渲染失败: ' + e, true); } // [MP] 桥没上线也先把历史存档列出来
             try { await renderViz(null); } catch (e) { } // [MP-美化] 空页面也把五个分类抽屉常驻摆出来，别让顶栏空半截
             setDrawerReadonly(true); // [MP] 没开对话前抽屉先进只读态：生成/替换的钮灰着并说明为什么，别亮一排点了才报错的按钮
