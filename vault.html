@@ -726,6 +726,20 @@
         .floor-meta { font-size: 12px; color: var(--muted); }
         .floor-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
+        /* [MP] 每楼一键复制。长在楼层头最右，折叠着也点得到；点它只复制不展开（onclick 里拦了冒泡）。
+           30px 见方是手指的最小舒适靶心，比图标本身大一圈，不然在手机上永远点偏。
+           复制成功就地把图标换成勾并染主题色：toast 在屏幕另一头，手指旁边这一下才是真回执。 */
+        .floor-copy {
+            flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: transparent; border: 0; box-shadow: none;
+            border-radius: 999px; color: var(--muted);
+            transition: background .12s, color .12s;
+        }
+        .floor-copy svg { width: 17px; height: 17px; display: block; }
+        .floor-copy.done { color: var(--accent); background: rgba(var(--accent-rgb), .16); }
+        @media (hover: hover) { .floor-copy:hover:not(:disabled) { background: var(--sf-strong); color: var(--ink); box-shadow: none; } }
+
         /* [MP-美化] 楼层正文：JS 测高 max-height 顺滑展开收起，长篇不截断 */
         /* [MP] 下两角的圆角挪到这里补——.floor 的 overflow:hidden 为了粘顶被撤了 */
         .swipes { overflow: hidden; max-height: 0; contain: layout paint; border-radius: 0 0 var(--radius) var(--radius); transition: max-height .3s cubic-bezier(.22, 1, .36, 1); }
@@ -3646,6 +3660,36 @@
 
         function textPrefix80(s) { return String(s || '').slice(0, 80); }
 
+        const MP_COPY_ICON = {
+            copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9m0 2a2 2 0 0 1 2 -2h7a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2z"/><path d="M15 9v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v7a2 2 0 0 0 2 2h2"/></svg>',
+            done: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>',
+        };
+        // [MP] 写剪贴板。navigator.clipboard 要安全上下文，蜜脾走 https 有；
+        //   老 WebView 可能压根没这个 API（或有但被策略掐了），退回 execCommand 那套老办法：
+        //   临时塞个 textarea 选中再 copy，用完立刻拆。两条路都不通就如实回 false，不假装成功。
+        async function copyText(text) {
+            const s = String(text == null ? '' : text);
+            if (!s) return false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(s);
+                    return true;
+                }
+            } catch (e) { /* 掉到下面的老办法 */ }
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = s;
+                ta.setAttribute('readonly', '');
+                ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, s.length);
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return !!ok;
+            } catch (e) { return false; }
+        }
+
         async function render() {
             const main = document.getElementById('main');
             // [MP] 在线对话读实时快照，书架上的书读它自己那份离线拷贝。两者结构一样，下面一套代码通吃。
@@ -3714,6 +3758,28 @@
                 let built = false;
                 let cur = cleanMode ? 0 : m.swipeId;   // 此刻显示的是第几版；净版只有一版，恒为 0
                 let deck = null, snCount = null, snTags = null, snPrev = null, snNext = null;
+
+                // [MP] 一键复制：复制的永远是你此刻眼前的那一版原始文本——
+                //   净版档就是净版，原文档就是当前翻到的第 cur 版（没展开时即酒馆采用的那版）。
+                //   拿的是 swipes[cur] 而不是渲染后的 DOM：要的是能原样贴回去的字，不是 markdown 渲完的壳。
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'floor-copy';
+                copyBtn.title = '复制本楼正文';
+                copyBtn.innerHTML = MP_COPY_ICON.copy;
+                copyBtn.onclick = async (e) => {
+                    e.stopPropagation();   // 别顺手把这一楼展开/收起
+                    const ok = await copyText(swipes[cur]);
+                    if (!ok) { toast('没复制成：浏览器不让写剪贴板，展开长按正文手选吧'); return; }
+                    copyBtn.classList.add('done');
+                    copyBtn.innerHTML = MP_COPY_ICON.done;
+                    clearTimeout(copyBtn.__mpT);
+                    copyBtn.__mpT = setTimeout(() => {
+                        copyBtn.classList.remove('done');
+                        copyBtn.innerHTML = MP_COPY_ICON.copy;
+                    }, 1400);
+                };
+                head.appendChild(copyBtn);
 
                 // [MP] 版本条只报「你现在翻到第几版、哪一版是酒馆当前采用的」。
                 // 蜜脾对酒馆的 swipe 全程只读：翻版本一个字都不会写回去，
