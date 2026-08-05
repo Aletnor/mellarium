@@ -2058,7 +2058,7 @@
 
         // [MP] ============ IndexedDB ============
         const DB_NAME = 'mellarium';
-        const DB_VER = 2;
+        const DB_VER = 3;   // [MP] v3(2026-08-06)：新增 mirror 镜像库，根治702增殖
         let db = null;
 
         function openDB() {
@@ -2079,6 +2079,14 @@
                     }
                     if (!d.objectStoreNames.contains('settings')) {
                         d.createObjectStore('settings', { keyPath: 'key' }); // [MP] 副API配置+提示词
+                    }
+                    if (!d.objectStoreNames.contains('mirror')) {
+                        // [MP] 2026-08-06 根治702增殖：镜像楼层的新家。复合主键 [chatKey, 楼号]，
+                        //   一本书一楼在库里永远只占一个键位——put 天然幂等覆盖，物理上长不出重复行。
+                        //   不建二级索引：按书取整本走主键范围查询就够了。
+                        //   旧行数据从 prose 库迁过来（见 mirrorSelfHeal），迁移放在开库之后做，
+                        //   不塞在 versionchange 事务里：这台内核的事务不敢深信，升级事务里失败会整库回滚。
+                        d.createObjectStore('mirror', { keyPath: ['chatKey', 'floorIndex'] });
                     }
                 };
                 req.onsuccess = () => resolve(req.result);
@@ -2102,6 +2110,14 @@
         async function delProse(id) { return await idbReq(tx('prose', 'readwrite').delete(id)); }
         async function getAll(store) { return db ? await idbReq(tx(store, 'readonly').getAll()) : []; }
 
+        // [MP] 镜像库按书取整本：主键范围 [chatKey,-∞]…[chatKey,+∞]。键是构造出来的，
+        //   不依赖二级索引；getAll 按主键序返回，天然楼号升序。
+        function mirrorRange(chatKey) { return IDBKeyRange.bound([chatKey, -Infinity], [chatKey, Infinity]); }
+        async function mirrorForChat(chatKey) {
+            if (!db || !db.objectStoreNames.contains('mirror')) return [];
+            return await idbReq(tx('mirror', 'readonly').getAll(mirrorRange(chatKey)));
+        }
+
         // [MP] ============ 书架 ============
         // 侧边栏是蜜脾自己的书架，上面只站着「收进来的书」加上酒馆此刻开着的那本。
         // 收进来 = 蜜脾把整本抄一份到本地：每楼的原文（含全部 swipe）＋净版快照。
@@ -2119,26 +2135,27 @@
         }
         function isBook(k) { return !!k && bookKeys.has(k); }
 
-        // [MP] 把整本抄进本地。一楼一条，覆盖式重写。
-        //   为什么不做增量：楼层会在酒馆里被插入、删除、隐藏，楼号整体位移，
-        //   逐楼对账的代价和出错概率都比整本重写高得多。三百楼一次事务，几十毫秒的事。
+        // [MP] 把整本抄进本地。一楼一个键位（[chatKey,楼号] 复合主键），put 直接覆盖。
+        //   2026-08-06 重写根治702增殖。旧设计「查旧行id→逐条delete→add新行」，在 Miel 手机的
+        //   内核上「查旧行」会间歇性读到过期空集：delete 全部空放炮而 add 照常成功，
+        //   14楼一天被追加成702行。新设计对旧行不读也不逐条删——键是算出来的：
+        //   写入即覆盖同键旧值；楼层变少时用构造的键范围一刀裁尾。整条路不含「先查询再删除」。
         let lastMirrorSig = new Map();   // chatKey → 上次抄的指纹，没变就不重抄，省得每次心跳都写盘
         async function mirrorBook(chatKey, messages) {
             if (!db || !chatKey || !Array.isArray(messages) || !messages.length) return false;
+            if (!db.objectStoreNames.contains('mirror')) return false;
             let sig = messages.length + ':';
             for (const m of messages) sig += (m.mes ? m.mes.length : 0) + ',' + m.swipeId + ',' + (m.mesClean ? m.mesClean.length : 0) + ';';
             if (lastMirrorSig.get(chatKey) === sig) return false;
             const now = Date.now();
-            // [MP] 先在只读事务里把旧条的 id 拿全，再开一个读写事务一口气删+写。
-            //   不在同一个事务里 await：IndexedDB 的事务只在事件回调那一瞬间是活的，
+            // [MP] 单一读写事务，不在中途 await：IndexedDB 的事务只在事件回调那一瞬间是活的，
             //   await 一下控制权就交出去了，回来时事务已经关了，报 TransactionInactiveError。
-            const oldRows = await proseForChat(chatKey);
-            const store = tx('prose', 'readwrite');
-            for (const r of oldRows) store.delete(r.id);   // 含更早版本蜜脾留下的按版本存的碎条
-            let last = null;
-            for (const m of messages) {
-                last = store.add({
-                    chatKey: chatKey, kind: 'mirror', floorIndex: m.floorIndex,
+            const store = tx('mirror', 'readwrite');
+            for (let i = 0; i < messages.length; i++) {
+                const m = messages[i];
+                store.put({
+                    chatKey: chatKey,
+                    floorIndex: Number.isInteger(m.floorIndex) ? m.floorIndex : i,   // 主键成分，必须是合法键
                     name: m.name || '', is_user: !!m.is_user, is_system: !!m.is_system,
                     swipes: (m.swipes && m.swipes.length) ? m.swipes : [m.mes || ''],
                     swipeId: Number.isInteger(m.swipeId) ? m.swipeId : 0,
@@ -2147,111 +2164,108 @@
                     savedAt: now,
                 });
             }
-            if (last) await idbReq(last);   // 等最后一条落地，调用方拿到的就是「真写完了」
+            // [MP] 裁尾：楼层比上次少（酒馆删楼/切分支）时，[chatKey, 当前楼数] 往后全砍。
+            //   范围键是构造的，删除不需要先读库——在这台内核上读库就可能拿到过期数据。
+            const last = store.delete(IDBKeyRange.bound([chatKey, messages.length], [chatKey, Infinity]));
+            await idbReq(last);   // 同事务按序执行，尾刀落地=前面的写全落地
             lastMirrorSig.set(chatKey, sig);
             return true;
         }
 
-        // [MP] ============ 镜像自检 + 自愈（2026-08-05 「702楼」增殖事故后加） ============
-        //   事故：Miel 手机的 WebView 上，mirrorBook 的「删旧行」63 次全部静默失效、「写新行」每次成功，
-        //   一本 14 楼的书被一天之内追加成 702 行（id 1921-2622 连号，一条没删掉）。代码逻辑已逐行排除，
-        //   病根在这台内核的 IndexedDB 原语。此函数每次启动全表扫一遍：
-        //   ① 发现同一本书同一楼有多条镜像 → 判定增殖；
-        //   ② 探针 A/B 现场测「索引查询」「按 id 删除」两个原语哪个是坏的，结果写进调试日志（截图发 Claude）；
-        //   ③ 自愈：每楼只留最新一条；常规删除清不掉就换 clear 整库重写（另一条原语，不指望坏掉的那条）。
-        //   库干净时只花一次全表读，静默通过。
+        // [MP] ============ 镜像自检 + 迁移 + 探针（702增殖事故 2026-08-05 → 08-06 根治） ============
+        //   事故：Miel 手机的内核上，旧 mirrorBook「查旧行id→delete→add」里的「查」间歇性读到
+        //   过期空集，63 次删除全部空放炮、写入全部成功，14 楼被追加成 702 行。08-06 探针实测
+        //   索引查询和按 id 删除当场都是好的——原语没有永久坏，是「读」会间歇性说谎。
+        //   根治：镜像搬进复合主键 [chatKey,楼号] 的 mirror 新库，put 幂等覆盖 + 构造键裁尾，
+        //   写路径彻底不含「先查询再删除」。此函数每次启动：
+        //   ① 把 prose 库残存的旧镜像行搬进新库（每楼最新版胜出），搬完清走旧行和哨兵尸体；
+        //   ② 探针改测新库的两条命脉：范围查询对全表真值、哨兵 put→构造键范围删；
+        //   ③ 报告存 localStorage 每次复述——证词钉在墙上，刷屏冲不走。
         async function mirrorSelfHeal() {
             if (!db) return;
-            // [MP] 2026-08-06 改版：探针改成每次启动都跑、报告存 localStorage 每次复述。
-            //   第一版只在发病时喊一遍，被刷屏冲走就永远丢了——证词必须钉在墙上。
             const report = [];
             const say = (msg, isErr) => { dlog(msg, isErr); report.push(msg); };
-            try { const old = localStorage.getItem('mp_heal_report'); if (old) dlog('【上次自检报告】' + old); } catch (e) { }
-            let all;
-            try { all = await getAll('prose'); } catch (e) { dlog('镜像自检: 全表读取失败 ' + e, true); return; }
-            const byKey = new Map();
-            for (const r of all) {
-                if (!r || r.kind !== 'mirror') continue;
-                if (!byKey.has(r.chatKey)) byKey.set(r.chatKey, []);
-                byKey.get(r.chatKey).push(r);
-            }
-            const sick = [];
-            let fattest = null;   // 镜像行最多的那本，给探针A当靶子（没病也测）
-            for (const ent of byKey) {
-                const rows = ent[1];
-                if (!fattest || rows.length > fattest.rows.length) fattest = { key: ent[0], rows: rows };
-                const floors = new Set(rows.map(r => r.floorIndex));
-                if (rows.length > floors.size) sick.push({ key: ent[0], rows: rows, nf: floors.size });
-            }
-            say('【镜像自检】全表' + all.length + '条，' + byKey.size + '本书' + (sick.length ? ('，' + sick.length + '本在增殖！') : '，无增殖'), !!sick.length);
-            // ---- 探针 A：索引查询是不是好的（拿镜像最多那本试，全表数是地面真值；每次启动都测） ----
-            if (fattest) try {
-                const truth = all.filter(r => r && r.chatKey === fattest.key).length;
-                const viaIdx = await proseForChat(fattest.key);
-                const ok = viaIdx.length === truth;
-                say('探针A 索引查询: 查到' + viaIdx.length + '条 / 全表实有' + truth + '条'
-                    + (ok ? '（索引是好的）' : '（索引坏！查不全，这可能就是病根）'), !ok);
-            } catch (e) { say('探针A 索引查询直接抛错: ' + e, true); }
-            // ---- 探针 B：写一条哨兵→索引找它→按 id 删它(连同历史残留哨兵)→全表验尸；每次启动都测 ----
-            try {
-                const pid = await idbReq(tx('prose', 'readwrite').add({ chatKey: '__mp_probe__', kind: 'probe', floorIndex: 0, savedAt: Date.now() }));
-                let seen = [];
-                try { seen = await proseForChat('__mp_probe__'); } catch (e) { }
-                const strays = (await getAll('prose')).filter(r => r && r.chatKey === '__mp_probe__');
-                try {
-                    const store = tx('prose', 'readwrite');
-                    let last = null;
-                    for (const s of strays) last = store.delete(s.id);
-                    if (last) await idbReq(last);
-                } catch (e) { say('探针B 删除请求抛错: ' + e, true); }
-                const left = (await getAll('prose')).filter(r => r && r.chatKey === '__mp_probe__').length;
-                say('探针B 哨兵: 写入id=' + pid + '，索引见' + seen.length + '条，按id删' + strays.length + '具后残留' + left + '条'
-                    + (left ? '（删除坏！这就是增殖病根）' : '（删除是好的）'), !!left);
-            } catch (e) { say('探针B 抛错: ' + e, true); }
-            // ---- 报告落盘：没病也存，复刷不怕丢 ----
             const saveReport = () => { try { localStorage.setItem('mp_heal_report', new Date().toLocaleString() + ' | ' + report.join(' | ')) } catch (e) { } };
-            if (!sick.length) { saveReport(); return; }
-            // ---- 自愈：每本每楼只留最新一条（savedAt 大者胜，平局比 id） ----
-            for (const s of sick) {
-                const best = new Map();
-                for (const r of s.rows) {
-                    const b = best.get(r.floorIndex);
-                    if (!b || (r.savedAt || 0) > (b.savedAt || 0) || ((r.savedAt || 0) === (b.savedAt || 0) && r.id > b.id)) best.set(r.floorIndex, r);
-                }
-                const keepIds = new Set();
-                best.forEach(r => keepIds.add(r.id));
-                const loserIds = s.rows.filter(r => !keepIds.has(r.id)).map(r => r.id);
+            try { const old = localStorage.getItem('mp_heal_report'); if (old) dlog('【上次自检报告】' + old); } catch (e) { }
+            if (!db.objectStoreNames.contains('mirror')) { say('镜像自检: mirror 库不存在（DB v3 升级没跑成？）', true); saveReport(); return; }
+            // ---- ① 迁移：prose 里的旧镜像行 → mirror 新库 ----
+            let allProse = [];
+            try { allProse = await getAll('prose'); } catch (e) { say('镜像自检: prose 全表读取失败 ' + e, true); }
+            const oldRows = allProse.filter(r => r && (r.kind === 'mirror' || r.kind === 'probe'));
+            if (oldRows.length) {
+                const mig = oldRows.filter(r => r.kind === 'mirror');
+                // [MP] 升序 put：同一楼有多条（增殖残留）时最新一条最后写，覆盖胜出
+                mig.sort((a, b) => ((a.savedAt || 0) - (b.savedAt || 0)) || (a.id - b.id));
+                const books = new Set(mig.map(r => r.chatKey));
                 try {
-                    const store = tx('prose', 'readwrite');
+                    const ms = tx('mirror', 'readwrite');
                     let last = null;
-                    for (const id of loserIds) last = store.delete(id);
+                    for (const r of mig) {
+                        last = ms.put({
+                            chatKey: r.chatKey, floorIndex: Number.isInteger(r.floorIndex) ? r.floorIndex : 0,
+                            name: r.name || '', is_user: !!r.is_user, is_system: !!r.is_system,
+                            swipes: (r.swipes && r.swipes.length) ? r.swipes : [''],
+                            swipeId: Number.isInteger(r.swipeId) ? r.swipeId : 0,
+                            clean: r.clean != null ? r.clean : null, cleaned: !!r.cleaned, savedAt: r.savedAt || Date.now(),
+                        });
+                    }
                     if (last) await idbReq(last);
-                } catch (e) { dlog('清扫: 常规删除抛错: ' + e, true); }
-                let left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
-                if (left > s.nf) {
-                    // [MP] 按 id 删不动（正是事故里的症状）→ 换 clear 整库重写。哨兵尸体(kind='probe')也顺手扔掉
-                    say('清扫: 按id删除清不掉（还剩' + left + '条），改走 clear 整库重写', true);
-                    const survivors = (await getAll('prose')).filter(r => r && r.kind !== 'probe'
-                        && !(r.chatKey === s.key && r.kind === 'mirror' && !keepIds.has(r.id)));
-                    const store = tx('prose', 'readwrite');
-                    store.clear();
+                } catch (e) { say('迁移: 写入 mirror 新库失败 ' + e + '，旧行原地保留，下次启动再试', true); saveReport(); return; }
+                // 旧行清掉（含哨兵尸体）。按 id 删；删不净就 clear 整库重写非镜像行
+                try {
+                    const ps = tx('prose', 'readwrite');
                     let last = null;
-                    for (const sv of survivors) last = store.put(sv);
+                    for (const r of oldRows) last = ps.delete(r.id);
                     if (last) await idbReq(last);
-                    left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
+                } catch (e) { say('迁移: 删 prose 旧镜像行抛错 ' + e, true); }
+                let leftOld = [];
+                try { leftOld = (await getAll('prose')).filter(r => r && (r.kind === 'mirror' || r.kind === 'probe')); } catch (e) { }
+                if (leftOld.length) {
+                    say('迁移: 按id删不净（还剩' + leftOld.length + '条旧行），改走 clear 整库重写', true);
+                    try {
+                        const survivors = (await getAll('prose')).filter(r => r && r.kind !== 'mirror' && r.kind !== 'probe');
+                        const ps = tx('prose', 'readwrite');
+                        ps.clear();
+                        let last = null;
+                        for (const sv of survivors) last = ps.put(sv);
+                        await idbReq(last || ps.count());
+                    } catch (e) { say('迁移: clear 重写也失败 ' + e, true); }
                 }
-                say('【镜像自检】' + (splitChatKey(s.key).chat || s.key) + '：' + s.rows.length + '条 → ' + left + '条（应为' + s.nf + '楼）', left !== s.nf);
+                say('【迁移】prose 旧镜像 ' + mig.length + ' 条 → mirror 新库（' + books.size + ' 本书，每楼最新版胜出）');
+                lastMirrorSig.clear();   // 搬过家，旧指纹作废，下次镜像重新对账
             }
-            lastMirrorSig.clear();   // [MP] 库被清扫过，旧指纹作废，下次镜像重新对账
+            // ---- ② 探针：新库两条命脉，每次启动都测 ----
+            let allMirror = [];
+            try { allMirror = await getAll('mirror'); } catch (e) { say('探针: mirror 全表读取失败 ' + e, true); }
+            const cntByBook = new Map();
+            for (const r of allMirror) { if (r) cntByBook.set(r.chatKey, (cntByBook.get(r.chatKey) || 0) + 1); }
+            say('【镜像自检】mirror 库 ' + allMirror.length + ' 楼，' + cntByBook.size + ' 本书（复合主键，一楼一键位，物理上无重复）');
+            // 探针A：主键范围查询 vs 全表真值（拿最大那本试）
+            let fattest = null;
+            cntByBook.forEach((n, k) => { if (!fattest || n > fattest.n) fattest = { k: k, n: n }; });
+            if (fattest) try {
+                const viaRange = await mirrorForChat(fattest.k);
+                const ok = viaRange.length === fattest.n;
+                say('探针A 范围查询: 查到' + viaRange.length + '楼 / 全表实有' + fattest.n + '楼'
+                    + (ok ? '（范围查询是好的）' : '（范围查询坏！查不全，截图发Claude）'), !ok);
+            } catch (e) { say('探针A 范围查询抛错: ' + e, true); }
+            // 探针B：哨兵 put → 构造键范围删（全程不查库）→ 全表验尸
+            try {
+                await idbReq(tx('mirror', 'readwrite').put({ chatKey: '__mp_probe__', floorIndex: 0, savedAt: Date.now() }));
+                await idbReq(tx('mirror', 'readwrite').delete(mirrorRange('__mp_probe__')));
+                const left = (await getAll('mirror')).filter(r => r && r.chatKey === '__mp_probe__').length;
+                say('探针B 哨兵: put 后按构造键范围删，残留' + left + '条'
+                    + (left ? '（范围删除坏！截图发Claude）' : '（范围删除是好的）'), !!left);
+            } catch (e) { say('探针B 抛错: ' + e, true); }
             saveReport();
-            toast('蜜脾自检：清掉了增殖的重复镜像。请打开设置里的调试日志，把「探针」两行截图发给Claude');
+            if (oldRows.length) toast('蜜脾已把书架镜像搬进防增殖的新库（702事故根治）');
         }
 
         // [MP] 从本地拼回一本书，喂给 render() 用。结构跟桥的实时快照对齐，正文区那套代码一份通吃。
         async function loadBookSnapshot(chatKey) {
-            const rows = (await proseForChat(chatKey)).filter(r => r.kind === 'mirror');
+            const rows = await mirrorForChat(chatKey);
             if (!rows.length) return null;
-            rows.sort((a, b) => a.floorIndex - b.floorIndex);
+            rows.sort((a, b) => a.floorIndex - b.floorIndex);   // 范围 getAll 本就按主键升序，保险起见再排一遍
             return {
                 chatKey: chatKey, count: rows.length, offline: true,
                 // [MP] 抄进来的时候净版就一并抄了，所以离线也能切档。没有任何一楼带净版的
@@ -4258,17 +4272,36 @@
             });
         }
 
-        // [MP] 扫三库，按聊天汇总每个聊天各自存了多少
+        // [MP] mirror 库没有二级索引：主键本身就是 [chatKey,楼号]，键游标扫一遍按键首段分组数楼
+        function countMirrorByChatKey() {
+            return new Promise((res, rej) => {
+                const out = new Map();
+                if (!db.objectStoreNames.contains('mirror')) return res(out);
+                const req = tx('mirror', 'readonly').openKeyCursor();
+                req.onsuccess = () => {
+                    const c = req.result;
+                    if (!c) return res(out);
+                    const k = c.key[0];
+                    if (k !== '__mp_probe__') out.set(k, (out.get(k) || 0) + 1);   // 哨兵尸体不上书架
+                    c.continue();
+                };
+                req.onerror = () => rej(req.error);
+            });
+        }
+
+        // [MP] 扫四库，按聊天汇总每个聊天各自存了多少。prose=旧版碎条存档，mirror=整本镜像楼数
         async function allArchiveKeys() {
             if (!db) return [];
-            const [proseCnt, sumCnt, codex] = await Promise.all([
+            const [proseCnt, mirrorCnt, sumCnt, codex] = await Promise.all([
                 countByChatKey('prose'),
+                countMirrorByChatKey(),
                 countByChatKey('summaries'),
                 idbReq(tx('codex', 'readonly').getAll()),   // 档案一聊天一条，量小，为判断"有无正文"仍需读值
             ]);
             const map = new Map();
-            const get = (k) => { if (!map.has(k)) map.set(k, { chatKey: k, prose: 0, vols: 0, codex: false }); return map.get(k); };
+            const get = (k) => { if (!map.has(k)) map.set(k, { chatKey: k, prose: 0, mirror: 0, vols: 0, codex: false }); return map.get(k); };
             proseCnt.forEach((n, k) => { get(k).prose = n; });
+            mirrorCnt.forEach((n, k) => { get(k).mirror = n; });
             sumCnt.forEach((n, k) => { get(k).vols = n; });
             codex.forEach(r => { if (r.chatKey && (r.docText || '').trim()) get(r.chatKey).codex = true; });
             return Array.from(map.values()).sort((a, b) => a.chatKey.localeCompare(b.chatKey));
@@ -4457,7 +4490,7 @@
             try {
                 const all = await allArchiveKeys();
                 const rec = all.find(r => r.chatKey === chatKey);
-                if (rec) { pcnt = rec.prose; vols = rec.vols; hasCodex = rec.codex; }
+                if (rec) { pcnt = (rec.mirror || 0) + (rec.prose || 0); vols = rec.vols; hasCodex = rec.codex; }
             } catch (e) { }
             if (!confirm(`把「${splitChatKey(chatKey).chat}」从蜜脾里彻底删掉？\n\n· 本地 ${pcnt} 条正文、${vols} 卷总结${hasCodex ? '、1 份档案' : ''}全部删除\n· 酒馆那边（如果这对话还在）一个字都不动\n· 删了就没了，除非服务器备份里还留着旧的`)) return;
             bookKeys.delete(chatKey);
@@ -4470,6 +4503,7 @@
             });
             try {
                 await wipe('prose');
+                await idbReq(tx('mirror', 'readwrite').delete(mirrorRange(chatKey)));   // 镜像楼层：构造键范围一刀
                 await wipe('summaries');
                 await idbReq(tx('codex', 'readwrite').delete(chatKey));
             } catch (e) { toast('删除出错：' + (e && e.message || e)); return; }
@@ -4495,6 +4529,7 @@
             lastMirrorSig.delete(chatKey);
             await saveBookKeys();
             try {
+                await idbReq(tx('mirror', 'readwrite').delete(mirrorRange(chatKey)));   // 镜像楼层：构造键范围一刀
                 const store = tx('prose', 'readwrite');
                 await new Promise((res, rej) => {
                     const req = store.index('chatKey').openCursor(IDBKeyRange.only(chatKey));
@@ -4533,7 +4568,7 @@
             const keepScroll = sb ? sb.scrollTop : 0;
             const list = await allArchiveKeys();
             if (currentChatKey && !list.some(r => r.chatKey === currentChatKey)) {
-                list.push({ chatKey: currentChatKey, prose: 0, vols: 0, codex: false });
+                list.push({ chatKey: currentChatKey, prose: 0, mirror: 0, vols: 0, codex: false });
             }
             if (!list.length) { wrap.innerHTML = '<div class="empty">还没有对话记录。到酒馆打开一个聊天，或先在这里存档、建档。</div>'; return; }
             const groups = new Map();
@@ -4563,7 +4598,7 @@
                     btn.className = 'ct-chat' + (c.chatKey === selectedChatKey ? ' sel' : '');
                     btn.dataset.key = c.chatKey;
                     const shelved = isBook(c.chatKey);
-                    const bits = [shelved ? `整本${c.prose}楼` : '未存档', `总结${c.vols}卷`, c.codex ? '档案✓' : ''].filter(Boolean).join(' · ');
+                    const bits = [shelved ? `整本${c.mirror}楼` : '未存档', `总结${c.vols}卷`, c.codex ? '档案✓' : ''].filter(Boolean).join(' · ');
                     // [MP] 回形针斜插在卡片右上角，绝对定位不吃名字行的宽度
                     const clip = shelved
                         ? '<svg class="ct-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>在书架上</title><path d="M15 7l-6.5 6.5a1.5 1.5 0 0 0 3 3l6.5 -6.5a3 3 0 0 0 -6 -6l-6.5 6.5a4.5 4.5 0 0 0 9 9l6.5 -6.5"/></svg>'
@@ -4946,6 +4981,13 @@
             lastMirrorSig.delete(oldKey);
             const proseRows = await proseForChat(oldKey);
             for (const r of proseRows) { r.chatKey = newKey; await idbReq(tx('prose', 'readwrite').put(r)); }
+            // [MP] 镜像库：chatKey 是主键成分，改 key 等于换键位——put 新键 + 构造键范围删旧键，同一事务里做完
+            const mirrorRows = await mirrorForChat(oldKey);
+            if (mirrorRows.length) {
+                const ms = tx('mirror', 'readwrite');
+                for (const r of mirrorRows) { r.chatKey = newKey; ms.put(r); }
+                await idbReq(ms.delete(mirrorRange(oldKey)));
+            }
             const sumRows = await summariesForChat(oldKey);
             for (const r of sumRows) { r.chatKey = newKey; await idbReq(tx('summaries', 'readwrite').put(r)); }
             const cod = await loadCodexRecord(oldKey);
@@ -4988,19 +5030,37 @@
                 version: 1,
                 exportedAt: new Date().toISOString(),
                 prose: await getAll('prose'),
+                mirror: await getAll('mirror'),   // [MP] v3 镜像库（整本楼层）。旧包没有这字段，导入时自动从 prose 里挑
                 summaries: await getAll('summaries'),
                 codex: await getAll('codex'),
                 books: Array.from(bookKeys),   // [MP] 书架名单也带走，换手机导回去还是那几本书
             };
         }
-        // [MP] 灌回数据包：文件导入和服务器恢复共用。prose/summaries 追加、codex 按聊天覆盖、书架名单并集
+        // [MP] 灌回数据包：文件导入和服务器恢复共用。mirror 按键位覆盖（幂等，重复恢复不翻倍）、
+        //   prose/summaries 追加、codex 按聊天覆盖、书架名单并集。
+        //   旧版数据包的镜像行混在 prose 里（kind==='mirror'），挑出来路由进 mirror 新库；
+        //   哨兵尸体（kind==='probe'）直接扔。剩下的才是真·旧版碎条，照旧追加。
         async function importDataPack(data) {
-            const n = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
-            for (const r of (data.prose || [])) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
+            const proseRows = (data.prose || []).filter(r => r && r.kind !== 'mirror' && r.kind !== 'probe');
+            const legacyMirror = (data.prose || []).filter(r => r && r.kind === 'mirror');
+            const mirrorRows = (data.mirror || []).concat(legacyMirror);
+            mirrorRows.sort((a, b) => ((a.savedAt || 0) - (b.savedAt || 0)) || ((a.id || 0) - (b.id || 0)));   // 升序 put，同楼最新版胜出
+            const n = proseRows.length + mirrorRows.length + (data.summaries || []).length + (data.codex || []).length;
+            for (const r of proseRows) { delete r.id; await idbReq(tx('prose', 'readwrite').add(r)); }
+            for (const r of mirrorRows) {
+                await idbReq(tx('mirror', 'readwrite').put({
+                    chatKey: r.chatKey, floorIndex: Number.isInteger(r.floorIndex) ? r.floorIndex : 0,
+                    name: r.name || '', is_user: !!r.is_user, is_system: !!r.is_system,
+                    swipes: (r.swipes && r.swipes.length) ? r.swipes : [''],
+                    swipeId: Number.isInteger(r.swipeId) ? r.swipeId : 0,
+                    clean: r.clean != null ? r.clean : null, cleaned: !!r.cleaned, savedAt: r.savedAt || Date.now(),
+                }));
+            }
             for (const r of (data.summaries || [])) { delete r.id; await idbReq(tx('summaries', 'readwrite').add(r)); }
             for (const r of (data.codex || [])) { await idbReq(tx('codex', 'readwrite').put(r)); }
             // [MP] 书架名单并进来（合并不覆盖，别把这台机器上已有的书踢下架）
             if (Array.isArray(data.books)) { data.books.forEach(k => bookKeys.add(k)); await saveBookKeys(); }
+            lastMirrorSig.clear();   // 库灌过东西，旧指纹作废
             await renderCharTree();
             if (selectedChatKey) await selectChat(selectedChatKey);
             return n;
@@ -5027,8 +5087,8 @@
             try {
                 const data = JSON.parse(await file.text());
                 if (data.app !== 'mellarium') { toast('不是蜜脾导出文件'); return; }
-                const cnt = (data.prose || []).length + (data.summaries || []).length + (data.codex || []).length;
-                if (!confirm(`导入 ${cnt} 条记录？\nprose/summaries 追加，codex 按聊天覆盖。`)) return;
+                const cnt = (data.prose || []).length + (data.mirror || []).length + (data.summaries || []).length + (data.codex || []).length;
+                if (!confirm(`导入 ${cnt} 条记录？\n镜像楼层按键位覆盖，碎条/总结追加，档案按聊天覆盖。`)) return;
                 const n = await importDataPack(data);
                 toast(`已导入 ${n} 条`);
             } catch (err) {
@@ -5084,7 +5144,8 @@
             bkBusy = true;
             try {
                 const data = await buildExportData();
-                const cp = data.prose.length, cs = data.summaries.length, cc = data.codex.length;
+                const cm = (data.mirror || []).length, cs = data.summaries.length, cc = data.codex.length;
+                const cp = data.prose.length + cm;   // [MP] 「正文」= 镜像楼层 + 旧版碎条，对外一个数
                 if (cp + cs + cc === 0) {
                     // [MP] 空库不备：清完浏览器数据后开机自动备一个空包，会把服务器上的好备份挨个顶掉
                     if (!auto) toast('本地还没有数据，没什么可备份的');
@@ -5097,7 +5158,7 @@
                     '-' + bkPad(t.getHours()) + bkPad(t.getMinutes()) + bkPad(t.getSeconds()) + '.json';
                 await bkUpload(name, str);
                 let list = await bkReadIndex();
-                list.unshift({ name: name, at: t.toISOString(), bytes: str.length, prose: cp, summaries: cs, codex: cc, books: data.books.length });
+                list.unshift({ name: name, at: t.toISOString(), bytes: str.length, prose: cp, mirror: cm, summaries: cs, codex: cc, books: data.books.length });
                 const drop = list.slice(BK_KEEP);
                 list = list.slice(0, BK_KEEP);
                 await bkUpload(BK_INDEX, JSON.stringify({ app: 'mellarium-backup-index', list: list }));
@@ -5119,7 +5180,7 @@
                 if (!list.length) { toast('服务器上还没有备份。先点「备份到服务器」存一份'); return; }
                 const b = list[0];
                 const when = b.at ? new Date(b.at).toLocaleString() : '未知时间';
-                if (!confirm(`恢复服务器上最新的备份？\n${when}\n正文${b.prose != null ? b.prose : '?'}条 · 总结${b.summaries != null ? b.summaries : '?'}卷 · 档案${b.codex != null ? b.codex : '?'}份\n\nprose/summaries 追加、codex 按聊天覆盖，不清空现有数据。\n（服务器共 ${list.length} 份，更早的仍留着）`)) return;
+                if (!confirm(`恢复服务器上最新的备份？\n${when}\n正文${b.prose != null ? b.prose : '?'}条 · 总结${b.summaries != null ? b.summaries : '?'}卷 · 档案${b.codex != null ? b.codex : '?'}份\n\n镜像楼层按键位覆盖（重复恢复不会翻倍）、碎条/总结追加、档案按聊天覆盖，不清空现有数据。\n（服务器共 ${list.length} 份，更早的仍留着）`)) return;
                 toast('正在从服务器取回…', 0);
                 const r = await fetch('/user/files/' + b.name, { credentials: 'same-origin', cache: 'no-store' });
                 if (!r.ok) throw new Error('取备份文件失败（' + r.status + '）');
