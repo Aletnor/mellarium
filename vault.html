@@ -2162,6 +2162,11 @@
         //   库干净时只花一次全表读，静默通过。
         async function mirrorSelfHeal() {
             if (!db) return;
+            // [MP] 2026-08-06 改版：探针改成每次启动都跑、报告存 localStorage 每次复述。
+            //   第一版只在发病时喊一遍，被刷屏冲走就永远丢了——证词必须钉在墙上。
+            const report = [];
+            const say = (msg, isErr) => { dlog(msg, isErr); report.push(msg); };
+            try { const old = localStorage.getItem('mp_heal_report'); if (old) dlog('【上次自检报告】' + old); } catch (e) { }
             let all;
             try { all = await getAll('prose'); } catch (e) { dlog('镜像自检: 全表读取失败 ' + e, true); return; }
             const byKey = new Map();
@@ -2171,31 +2176,41 @@
                 byKey.get(r.chatKey).push(r);
             }
             const sick = [];
+            let fattest = null;   // 镜像行最多的那本，给探针A当靶子（没病也测）
             for (const ent of byKey) {
                 const rows = ent[1];
+                if (!fattest || rows.length > fattest.rows.length) fattest = { key: ent[0], rows: rows };
                 const floors = new Set(rows.map(r => r.floorIndex));
                 if (rows.length > floors.size) sick.push({ key: ent[0], rows: rows, nf: floors.size });
             }
-            if (!sick.length) return;
-            dlog('【镜像自检】发现 ' + sick.length + ' 本书的镜像在增殖', true);
-            // ---- 探针 A：索引查询是不是好的（拿病得最重那本试，全表数是地面真值） ----
-            try {
-                const s0 = sick[0];
-                const viaIdx = await proseForChat(s0.key);
-                const ok = viaIdx.length === s0.rows.length + all.filter(r => r && r.chatKey === s0.key && r.kind !== 'mirror').length;
-                dlog('探针A 索引查询: 查到' + viaIdx.length + '条 / 全表实有' + s0.rows.length + '条镜像'
-                    + (ok ? '（索引现在是好的）' : '（索引坏！查不全，这可能就是病根）'), !ok);
-            } catch (e) { dlog('探针A 索引查询直接抛错: ' + e, true); }
-            // ---- 探针 B：写一条哨兵→索引找它→按 id 删它→全表验尸 ----
+            say('【镜像自检】全表' + all.length + '条，' + byKey.size + '本书' + (sick.length ? ('，' + sick.length + '本在增殖！') : '，无增殖'), !!sick.length);
+            // ---- 探针 A：索引查询是不是好的（拿镜像最多那本试，全表数是地面真值；每次启动都测） ----
+            if (fattest) try {
+                const truth = all.filter(r => r && r.chatKey === fattest.key).length;
+                const viaIdx = await proseForChat(fattest.key);
+                const ok = viaIdx.length === truth;
+                say('探针A 索引查询: 查到' + viaIdx.length + '条 / 全表实有' + truth + '条'
+                    + (ok ? '（索引是好的）' : '（索引坏！查不全，这可能就是病根）'), !ok);
+            } catch (e) { say('探针A 索引查询直接抛错: ' + e, true); }
+            // ---- 探针 B：写一条哨兵→索引找它→按 id 删它(连同历史残留哨兵)→全表验尸；每次启动都测 ----
             try {
                 const pid = await idbReq(tx('prose', 'readwrite').add({ chatKey: '__mp_probe__', kind: 'probe', floorIndex: 0, savedAt: Date.now() }));
                 let seen = [];
                 try { seen = await proseForChat('__mp_probe__'); } catch (e) { }
-                try { await idbReq(tx('prose', 'readwrite').delete(pid)); } catch (e) { dlog('探针B 删除请求抛错: ' + e, true); }
+                const strays = (await getAll('prose')).filter(r => r && r.chatKey === '__mp_probe__');
+                try {
+                    const store = tx('prose', 'readwrite');
+                    let last = null;
+                    for (const s of strays) last = store.delete(s.id);
+                    if (last) await idbReq(last);
+                } catch (e) { say('探针B 删除请求抛错: ' + e, true); }
                 const left = (await getAll('prose')).filter(r => r && r.chatKey === '__mp_probe__').length;
-                dlog('探针B 哨兵: 写入id=' + pid + '，索引见' + seen.length + '条，按id删后全表残留' + left + '条'
-                    + (left ? '（删除坏！这就是增殖病根）' : '（删除现在是好的）'), !!left);
-            } catch (e) { dlog('探针B 抛错: ' + e, true); }
+                say('探针B 哨兵: 写入id=' + pid + '，索引见' + seen.length + '条，按id删' + strays.length + '具后残留' + left + '条'
+                    + (left ? '（删除坏！这就是增殖病根）' : '（删除是好的）'), !!left);
+            } catch (e) { say('探针B 抛错: ' + e, true); }
+            // ---- 报告落盘：没病也存，复刷不怕丢 ----
+            const saveReport = () => { try { localStorage.setItem('mp_heal_report', new Date().toLocaleString() + ' | ' + report.join(' | ')) } catch (e) { } };
+            if (!sick.length) { saveReport(); return; }
             // ---- 自愈：每本每楼只留最新一条（savedAt 大者胜，平局比 id） ----
             for (const s of sick) {
                 const best = new Map();
@@ -2215,7 +2230,7 @@
                 let left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
                 if (left > s.nf) {
                     // [MP] 按 id 删不动（正是事故里的症状）→ 换 clear 整库重写。哨兵尸体(kind='probe')也顺手扔掉
-                    dlog('清扫: 按id删除清不掉（还剩' + left + '条），改走 clear 整库重写', true);
+                    say('清扫: 按id删除清不掉（还剩' + left + '条），改走 clear 整库重写', true);
                     const survivors = (await getAll('prose')).filter(r => r && r.kind !== 'probe'
                         && !(r.chatKey === s.key && r.kind === 'mirror' && !keepIds.has(r.id)));
                     const store = tx('prose', 'readwrite');
@@ -2225,9 +2240,10 @@
                     if (last) await idbReq(last);
                     left = (await getAll('prose')).filter(r => r && r.chatKey === s.key && r.kind === 'mirror').length;
                 }
-                dlog('【镜像自检】' + (splitChatKey(s.key).chat || s.key) + '：' + s.rows.length + '条 → ' + left + '条（应为' + s.nf + '楼）', left !== s.nf);
+                say('【镜像自检】' + (splitChatKey(s.key).chat || s.key) + '：' + s.rows.length + '条 → ' + left + '条（应为' + s.nf + '楼）', left !== s.nf);
             }
             lastMirrorSig.clear();   // [MP] 库被清扫过，旧指纹作废，下次镜像重新对账
+            saveReport();
             toast('蜜脾自检：清掉了增殖的重复镜像。请打开设置里的调试日志，把「探针」两行截图发给Claude');
         }
 
