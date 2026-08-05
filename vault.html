@@ -726,9 +726,12 @@
         .floor-meta { font-size: 12px; color: var(--muted); }
         .floor-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
-        /* [MP] 每楼一键复制。长在楼层头最右，折叠着也点得到；点它只复制不展开（onclick 里拦了冒泡）。
+        /* [MP] 每楼一键复制。长在楼层头最右；点它只复制不展开/收起（onclick 里拦了冒泡）。
+           2026-08-06 Miel 点名：折叠态不给这颗按钮——收着的楼点头是想展开，
+           按钮杵在手指落点旁边就是个误触陷阱。展开(.open)之后它才出现。
            30px 见方是手指的最小舒适靶心，比图标本身大一圈，不然在手机上永远点偏。
            复制成功就地把图标换成勾并染主题色：toast 在屏幕另一头，手指旁边这一下才是真回执。 */
+        .floor:not(.open) .floor-copy { display: none; }
         .floor-copy {
             flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
             display: flex; align-items: center; justify-content: center;
@@ -3869,7 +3872,8 @@
                 let deck = null, snCount = null, snTags = null, snPrev = null, snNext = null;
 
                 // [MP] 一键复制：复制的永远是你此刻眼前的那一版原始文本——
-                //   净版档就是净版，原文档就是当前翻到的第 cur 版（没展开时即酒馆采用的那版）。
+                //   净版档就是净版，原文档就是当前翻到的第 cur 版。按钮 CSS 上只在展开态出现
+                //   （.floor:not(.open) 藏掉，Miel 点名防误触），所以点到它时 cur 一定是眼前这版。
                 //   拿的是 swipes[cur] 而不是渲染后的 DOM：要的是能原样贴回去的字，不是 markdown 渲完的壳。
                 const copyBtn = document.createElement('button');
                 copyBtn.type = 'button';
