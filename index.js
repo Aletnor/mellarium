@@ -1548,6 +1548,14 @@
         absAddWandButton();
         setTimeout(absAddWandButton, 2500);
         wireAbsEvents();
+        // [MP] 开关已开的话，页面一加载就把两条送递正则装好，不用等第一楼落地
+        setTimeout(function () {
+            absEnabled().then(function (on) {
+                if (on) return absInstallRegex();
+            }).catch(function (e) {
+                try { send('bridge-debug', { message: '[摘要] 开机装正则失败：' + String(e && e.message || e) }); } catch (e2) { }
+            });
+        }, 2000);
     }
 
     // [MP] 顶栏抽屉（把 vault.html 嵌成 iframe 的那套）已整体拆除。
