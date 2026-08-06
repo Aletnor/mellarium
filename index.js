@@ -1374,21 +1374,25 @@
         }
     }
 
-    // [MP] 摘要原料 = 前置的连续作者楼（背景参考）＋ 本楼正文，全走净版；剥掉本模块自己的折叠块防自嵌套
+    // [MP] 摘要原料 = 前置的连续作者楼（背景参考）＋ 本楼正文，全走净版；剥掉本模块自己的折叠块防自嵌套。
+    //   ★净版一律按 depth=0（近楼视角）洗（Miel 2026-08-06拍板：副API必须永远读完整原文写摘要）：
+    //   清杂物的正则照常生效，但「远楼只留摘要」这类按深度删正文的规则一概不生效——
+    //   否则补漏补到远处老楼时，副API读到的是被削成摘要的残版，等于照着摘要写摘要。
+    //   注意不能不传 depth：引擎源码（regex/engine.js getRegexedString）里 depth 非数字时
+    //   深度过滤整个跳过、带深度限制的脚本全都会跑，必须显式传 0 才是「近楼视角」。
     function absBuildSrc(floorIdx) {
         const c = ctx();
         const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
-        const dm = buildDepthMap(chat);
         const parts = [];
         let u = floorIdx - 1;
         const userParts = [];
         while (u >= 0 && chat[u] && chat[u].is_user) {
-            userParts.unshift(cleanOne(chat[u].mes || '', true, dm.has(u) ? dm.get(u) : null));
+            userParts.unshift(cleanOne(chat[u].mes || '', true, 0));
             u--;
         }
         if (userParts.length) parts.push('【背景参考·作者输入】\n' + userParts.join('\n'));
         const m = chat[floorIdx];
-        parts.push('【本楼正文】\n' + absStrip(cleanOne(m.mes || '', false, dm.has(floorIdx) ? dm.get(floorIdx) : null)));
+        parts.push('【本楼正文】\n' + absStrip(cleanOne(m.mes || '', false, 0)));
         return parts.join('\n\n');
     }
 
