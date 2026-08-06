@@ -305,10 +305,20 @@
         };
     }
 
+    // [MP] 多窗口保护（大改版第一期）：会读/改「当前对话」的指令必须核对是不是发给我的。
+    //   vault 的 post() 一直在消息里带着它眼中的在线 chatKey；BroadcastChannel 是广播，
+    //   同浏览器开多个酒馆标签 = 多个桥同时收到同一条指令，以前每个桥都各自执行到自己打开的对话上，
+    //   错窗口的正文会被拉去当总结原料、折叠替换会打到别的对话（冻结标签还会攒着消息解冻时补执行）。
+    //   现在：chatKey 对不上就静默扔掉——多窗口下对不上是常态不是错误，只有对话一致的那个桥干活。
+    //   msg.chatKey 为空（vault 没有在线对话）时放行，保持旧行为。
+    //   改名换档的瞬间 vault 已用新名、桥内存还是旧名，会短暂对不上：rename-reconcile 不设防，对齐后自愈。
+    const MP_GUARDED_OPS = { 'get-range-text': 1, 'apply-replace': 1, 'revert-replace': 1, 'set-injection': 1 };
+
     // [MP] 指令处理：vault → 桥
     channel.onmessage = function (ev) {
         const msg = ev && ev.data;
         if (!msg || typeof msg !== 'object') return;
+        if (MP_GUARDED_OPS[msg.type] && msg.chatKey && msg.chatKey !== currentChatKey()) return;
         switch (msg.type) {
             case 'ping':
                 send('pong');
@@ -1278,6 +1288,268 @@
         wireRpgEvents();
     }
 
+    // [MP] ============ 每楼摘要线（大改版第一期） ============
+    // 主API纯写文，一个字的账都不记（祖训）。每楼AI回复落地后（此刻酒馆必在前台没冻），
+    // 桥用蜜脾的副API配置给这楼出一段摘要，写回该楼正文末尾的 <details> 折叠块。
+    // 送递靠两条自动安装的酒馆全局正则（仅格式化提示词）：近楼删摘要块（主AI看全文）、
+    // 远楼只留摘要（省上下文）。正则装好后蜜脾网页关着也照常生效。
+    // 状态就住在正文里，不另设账本：重骰=新版本天生没折叠块=自动重做；改几个字块还在=不重做；
+    // 划回旧版本=旧摘要跟着旧正文一起回来。老楼补漏走魔棒菜单「摘要补漏」（必须前台跑，见下）。
+
+    const ABS_BLOCK_START = '<details data-mp-abs="1"><summary>本楼摘要</summary>';
+    const ABS_BLOCK_RE = /<details data-mp-abs="1">[\s\S]*?<\/details>/;
+    const ABS_AUTO_WINDOW = 6;   // 自动模式只看最近这几楼；老楼交给手动补漏（防止旧长档一开开关就失控烧token）
+    const ABS_AUTO_LIMIT = 2;    // 每次落楼最多自动补几楼
+    const ABS_MANUAL_LIMIT = 10; // 手动补漏每次最多几楼（一楼十几秒，再多前台挂太久）
+
+    // [MP] 默认摘要提示词。vault.html 里有一份同文案的展示副本(DEFAULT_ABS_PROMPT)，改这里必须同步改那边！
+    const ABS_DEFAULT_PROMPT =
+        '你是长篇小说的剧情档案员。「用户输入」是小说的一楼正文（可能附带【背景参考·作者输入】）。' +
+        '唯一任务：为【本楼正文】写一段80~160字的剧情摘要，只输出 <mpabs>摘要正文</mpabs>，标签外一个字都不写。\n' +
+        '【要求】\n' +
+        '1. 只概括【本楼正文】里发生的事；背景参考仅用于理解，不得写进摘要。\n' +
+        '2. 客观第三人称叙事体；人物一律用原文原名称呼，禁止出现「你」「我」这类称呼。\n' +
+        '3. 必留：具体行动与结果、关键对话的核心内容、人物关系或情绪的实质变化、时间地点变动、重要物品的出现与转移。\n' +
+        '4. 剔除：景物渲染、修辞、逐句对白、无实质推进的往来。\n' +
+        '5. 亲密与成人情节同样是剧情事实，照实概括到具体行为与关系进展，不回避不含糊。\n' +
+        '6. 摘要是一段纯文本，不用列表、标题、加粗，不带任何解释或前后缀。';
+
+    function absHas(text) { return ABS_BLOCK_RE.test(String(text || '')); }
+    function absStrip(text) {
+        return String(text || '').replace(new RegExp(ABS_BLOCK_RE.source, 'g'), '').replace(/\n+$/, '');
+    }
+    async function absEnabled() { return !!(await rpgGetVaultSetting('absEnabled', false)); }
+    async function absPrompt() {
+        const p = await rpgGetVaultSetting('absPrompt', '');
+        return (typeof p === 'string' && p.trim()) ? p : ABS_DEFAULT_PROMPT;
+    }
+    function absToast(t) {
+        try { if (window.toastr) { window.toastr.info(t, '摘要线'); return; } } catch (e) { }
+        console.log(TAG, '[摘要]', t);
+    }
+
+    // [MP] 自动安装「近楼看全文/远楼只看摘要」正则对（Miel 2026-08-06 拍板：桥自动装）。
+    //   装进酒馆正则扩展的全局脚本列表（extension_settings.regex，用户配置数据，不碰任何代码）。
+    //   幂等：按固定 id / 脚本名查重，已存在就一根手指都不动——Miel 在酒馆正则界面手调过的
+    //   深度、开关、内容全都保得住。想停掉送递就在酒馆正则里禁用这两条（那是送递的总开关）；
+    //   蜜脾设置里的开关只管「还生成不生成新摘要」。
+    //   深度语义（照抄酒馆引擎）：depth=从最后一条可见消息往回数，0=最新。默认近10条(0~9)看全文，10条开外只看摘要。
+    async function absInstallRegex() {
+        try {
+            await loadRegexEngine();
+            if (!regexEngine || !regexEngine.regex_placement) return;
+            const c = ctx();
+            const es = c && c.extensionSettings;
+            if (!es) return;
+            if (!Array.isArray(es.regex)) es.regex = [];
+            const AI = regexEngine.regex_placement.AI_OUTPUT;
+            // 字段形状照抄酒馆正则扩展 index.js 的新建脚本模板（2026-08-06 对过真源码）
+            const mk = function (id, name, find, rep, minD, maxD) {
+                return {
+                    id: id, scriptName: name, findRegex: find, replaceString: rep, trimStrings: [],
+                    placement: [AI], disabled: false, markdownOnly: false, promptOnly: true,
+                    runOnEdit: false, substituteRegex: 0, minDepth: minD, maxDepth: maxD,
+                };
+            };
+            const defs = [
+                mk('mp-abs-near', '【蜜脾】近楼藏摘要块',
+                    '/\\n*<details data-mp-abs="1"><summary>本楼摘要<\\/summary>\\n?[\\s\\S]*?\\n?<\\/details>/',
+                    '', null, 9),
+                mk('mp-abs-far', '【蜜脾】远楼只留摘要',
+                    '/^[\\s\\S]*<details data-mp-abs="1"><summary>本楼摘要<\\/summary>\\n?([\\s\\S]*?)\\n?<\\/details>[\\s\\S]*$/',
+                    '【本楼梗概】$1', 10, null),
+            ];
+            let added = 0;
+            defs.forEach(function (d) {
+                if (!es.regex.some(function (s) { return s && (s.id === d.id || s.scriptName === d.scriptName); })) {
+                    es.regex.push(d); added++;
+                }
+            });
+            if (added) {
+                if (typeof c.saveSettingsDebounced === 'function') c.saveSettingsDebounced();
+                absToast('已装入摘要送递正则×' + added + '（在酒馆正则列表里，两条【蜜脾】脚本）');
+            }
+        } catch (e) {
+            try { send('bridge-debug', { message: '[摘要] 送递正则自动安装失败：' + String(e && e.message || e) }); } catch (e2) { }
+        }
+    }
+
+    // [MP] 摘要原料 = 前置的连续作者楼（背景参考）＋ 本楼正文，全走净版；剥掉本模块自己的折叠块防自嵌套
+    function absBuildSrc(floorIdx) {
+        const c = ctx();
+        const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
+        const dm = buildDepthMap(chat);
+        const parts = [];
+        let u = floorIdx - 1;
+        const userParts = [];
+        while (u >= 0 && chat[u] && chat[u].is_user) {
+            userParts.unshift(cleanOne(chat[u].mes || '', true, dm.has(u) ? dm.get(u) : null));
+            u--;
+        }
+        if (userParts.length) parts.push('【背景参考·作者输入】\n' + userParts.join('\n'));
+        const m = chat[floorIdx];
+        parts.push('【本楼正文】\n' + absStrip(cleanOne(m.mes || '', false, dm.has(floorIdx) ? dm.get(floorIdx) : null)));
+        return parts.join('\n\n');
+    }
+
+    // [MP] 抠出回复里最后一个 <mpabs>；没包标签但整体像一段摘要也认（宽进）。
+    //   摘要必须是纯文本：剥掉一切标签，防止里面混进 </details> 之类把折叠块和送递正则打断。
+    function absParseReply(text) {
+        const s = String(text || '').replace(/<think(?:ing)?[\s>][\s\S]*?<\/think(?:ing)?>/gi, '');
+        let body = null;
+        const ms = Array.from(s.matchAll(/<mpabs>([\s\S]*?)<\/mpabs>/gi));
+        if (ms.length) body = ms[ms.length - 1][1];
+        else { const t = s.trim(); if (t && t.length <= 1000) body = t; }
+        if (!body) return null;
+        body = body.replace(/<[^>]*>/g, '').trim();
+        return body || null;
+    }
+
+    // [MP] 给一楼出摘要并写回折叠块。收尾时现场重验：请求期间换了对话/重骰/改了字，结果直接扔（标脏即弃）。
+    async function absSettleFloor(chatKey, floorIdx) {
+        const c = ctx();
+        const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
+        const m = chat[floorIdx];
+        if (!m || m.is_user || m.is_system) return false;
+        const raw = String(m.mes || '');
+        if (!raw.trim() || raw === '...') return false;
+        if (absHas(raw)) return false;                    // 已有摘要
+        if (SUMMARY_TAG_RE.test(raw)) return false;       // 卷总结楼不配摘要（它本身就是摘要）
+        await loadRegexEngine();
+        const reply = await rpgCallSubApi(await absPrompt(), absBuildSrc(floorIdx));
+        const abs = absParseReply(reply);
+        if (!abs) throw new Error(floorIdx + '楼：副API回复里没有摘要');
+        if (currentChatKey() !== chatKey) return false;
+        const c2 = ctx();
+        const chat2 = (c2 && Array.isArray(c2.chat)) ? c2.chat : [];
+        const m2 = chat2[floorIdx];
+        if (!m2 || String(m2.mes || '') !== raw) return false;   // 请求期间被重骰/改过 → 过期货，扔
+        m2.mes = raw + '\n\n' + ABS_BLOCK_START + '\n' + abs + '\n</details>';
+        ensureSwipesLocal(m2);   // 把新正文对齐进当前 swipe 槽（摘要跟着这一版走）
+        if (m2.extra) delete m2.extra.token_count;
+        if (typeof c2.updateMessageBlock === 'function') {
+            try { c2.updateMessageBlock(floorIdx, m2); } catch (e) { }
+        }
+        return true;
+    }
+
+    // [MP] 跑一批楼。同时只跑一发；每楼串行（副API本来就一次一发）；成了才落盘。
+    let absRunning = false;
+    async function absRunBatch(todo, chatKey, manual) {
+        if (absRunning) return 0;
+        absRunning = true;
+        let ok = 0;
+        try {
+            for (const f of todo) {
+                if (currentChatKey() !== chatKey) break;   // 中途切了对话就停
+                if (await absSettleFloor(chatKey, f)) {
+                    ok++;
+                    if (manual) absToast(f + '楼摘要好了（' + ok + '/' + todo.length + '）');
+                }
+            }
+        } catch (e) {
+            const msg = String(e && e.message || e);
+            absToast('摘要失败：' + msg);
+            try { send('bridge-debug', { message: '[摘要] ' + msg }); } catch (e2) { }
+        } finally {
+            absRunning = false;
+        }
+        if (ok) {
+            try {
+                const c = ctx();
+                const save = (c && (c.saveChat || c.saveChatConditional)) || null;
+                if (typeof save === 'function') await save();
+            } catch (e) {
+                absToast('摘要已写进楼里但写盘失败：' + String(e && e.message || e));
+                try { send('bridge-debug', { message: '[摘要] 写盘失败：' + String(e && e.message || e) }); } catch (e2) { }
+            }
+            try { send('chat-dirty'); } catch (e) { }   // 正文变了，蜜脾那边好刷新
+        }
+        return ok;
+    }
+
+    // [MP] 自动挡：落楼后补最近几楼里缺摘要的（窗口内从旧到新，跑不完下次落楼接着跑）
+    async function absAuto() {
+        if (absRunning) return;
+        if (!(await absEnabled())) return;
+        const chatKey = currentChatKey();
+        if (!chatKey) return;
+        await absInstallRegex();   // 幂等，首次真装，之后查一眼就走
+        const c = ctx();
+        const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
+        const todo = [];
+        for (let i = Math.max(0, chat.length - ABS_AUTO_WINDOW); i < chat.length; i++) {
+            const m = chat[i];
+            if (m && !m.is_user && !m.is_system && String(m.mes || '').trim() && String(m.mes) !== '...'
+                && !absHas(m.mes) && !SUMMARY_TAG_RE.test(m.mes)) todo.push(i);
+            if (todo.length >= ABS_AUTO_LIMIT) break;
+        }
+        if (todo.length) await absRunBatch(todo, chatKey, false);
+    }
+
+    // [MP] 手动挡（魔棒菜单「摘要补漏」）：全书扫一遍缺摘要的楼，从最早的开始补，一次最多一批。
+    //   为什么按钮在酒馆里而不是蜜脾里：写回折叠块必须动酒馆内存里的 chat 数组，而蜜脾在前台时
+    //   酒馆标签会被手机冻死——补漏必须在酒馆自己前台的时候跑，按钮就得长在酒馆里。
+    async function absCatchupManual() {
+        if (absRunning) { absToast('摘要正在跑，稍等再点'); return; }
+        if (!(await absEnabled())) { absToast('摘要线没开：去蜜脾→副API设置里打开「每楼摘要」'); return; }
+        const chatKey = currentChatKey();
+        if (!chatKey) { absToast('先打开一个对话'); return; }
+        await absInstallRegex();
+        const c = ctx();
+        const chat = (c && Array.isArray(c.chat)) ? c.chat : [];
+        const missing = [];
+        for (let i = 0; i < chat.length; i++) {
+            const m = chat[i];
+            if (m && !m.is_user && !m.is_system && String(m.mes || '').trim() && String(m.mes) !== '...'
+                && !absHas(m.mes) && !SUMMARY_TAG_RE.test(m.mes)) missing.push(i);
+        }
+        if (!missing.length) { absToast('全部楼层都有摘要了'); return; }
+        const n = Math.min(ABS_MANUAL_LIMIT, missing.length);
+        if (!window.confirm('缺摘要 ' + missing.length + ' 楼。本次补最早的 ' + n + ' 楼？\n（一楼约十几秒，补漏期间请停在酒馆页别切走）')) return;
+        const done = await absRunBatch(missing.slice(0, n), chatKey, true);
+        const left = missing.length - (done || 0);
+        absToast('本次补好 ' + (done || 0) + ' 楼' + (left > 0 ? ('，还缺 ' + left + ' 楼，再点一次继续') : '，全齐了'));
+    }
+
+    // [MP] 魔棒菜单入口
+    function absAddWandButton() {
+        const menu = document.getElementById('extensionsMenu');
+        if (!menu) { setTimeout(absAddWandButton, 800); return; }
+        if (document.getElementById('mp_abs_wand')) return;
+        const btn = document.createElement('div');
+        btn.id = 'mp_abs_wand';
+        btn.className = 'list-group-item flex-container flexGap5 interactable';
+        btn.tabIndex = 0;
+        btn.innerHTML = '<div class="fa-solid fa-file-lines extensionsMenuExtensionButton"></div><span>摘要补漏</span>';
+        btn.addEventListener('click', function () {
+            absCatchupManual().catch(function (e) { absToast('补漏出错：' + (e && e.message || e)); });
+        });
+        menu.appendChild(btn);
+    }
+
+    // [MP] 事件接线：自带重试，独立一套（不搅正文快照那套，也不搅养成线）
+    function wireAbsEvents() {
+        const c = ctx();
+        if (!c || !c.eventSource || !c.eventTypes) { setTimeout(wireAbsEvents, 300); return; }
+        const es = c.eventSource, et = c.eventTypes;
+        if (et.MESSAGE_RECEIVED) es.on(et.MESSAGE_RECEIVED, function () {
+            // [MP] 稍等一拍让楼落稳、净版能算；1500ms 也错开养成线的 900ms，两条线都开时别挤同一瞬间
+            setTimeout(function () {
+                absAuto().catch(function (e) {
+                    try { send('bridge-debug', { message: '[摘要] 自动摘要失败：' + String(e && e.message || e) }); } catch (e2) { }
+                });
+            }, 1500);
+        });
+        // 重骰/删楼不用管账：摘要住在正文里，跟着版本走，天生一致
+    }
+
+    function absInit() {
+        absAddWandButton();
+        setTimeout(absAddWandButton, 2500);
+        wireAbsEvents();
+    }
+
     // [MP] 顶栏抽屉（把 vault.html 嵌成 iframe 的那套）已整体拆除。
     // Miel 一直是当独立网页开蜜脾的，抽屉属搁置分支，留着只会误导「还有个 iframe 宿主」。
     // 桥不依赖它：BroadcastChannel 是同源跨标签页通信，两边各自开着就能对上话。
@@ -1291,4 +1563,5 @@
 
     wireEvents();
     rpgInit();
+    absInit();
 })();

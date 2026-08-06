@@ -1473,6 +1473,15 @@
             </div>
             <div class="srow"><label>最大回复长度（token）</label><input type="number" id="s-maxtok" min="1" placeholder="8192" /></div>
             <div class="srow"><label>破限提示词（系统·所有请求通用，可留空）</label><textarea id="s-jailbreak" rows="6" placeholder="给副API的破限/越权系统提示，会加在总结和档案请求最前面。不需要就留空。"></textarea></div>
+            <!-- [MP] 每楼摘要线（大改版第一期）：生成开关在这，送递开关在酒馆正则里那两条【蜜脾】脚本 -->
+            <div class="srow">
+                <label><input type="checkbox" id="s-abs-on" /> 每楼摘要：AI回复落地后，副API自动写一段摘要塞进该楼末尾的折叠块</label>
+                <div class="floor-meta" style="margin-top:6px">老楼补漏：酒馆魔棒菜单→「摘要补漏」（必须在酒馆页前台跑）。送递靠酒馆正则里两条【蜜脾】脚本（桥自动装：近10条楼给主AI看全文，更远的只看摘要；想调远近或暂停送递，去酒馆正则界面改那两条）。开关即存即生效，不用刷新酒馆。</div>
+                <details class="prompt-fold" style="margin-top:8px">
+                    <summary>摘要提示词（系统·点开查看，要改先点右上角铅笔）</summary>
+                    <div class="pf-wrap"><div class="pf-tools" id="pf-tools-abs"></div><textarea id="s-abs-prompt" rows="6" readonly></textarea></div>
+                </details>
+            </div>
             <div class="srow inline"><button class="primary" id="btn-save-settings">保存设置</button><button id="btn-test-api">测试连通</button><button id="btn-direct-test">直连测试</button></div>
             <div id="api-status" class="api-status">状态：未测试</div>
         </div>
@@ -2362,6 +2371,19 @@
             '一两卷内自然会有结果的琐事（有人敲门、欲言又止、普通等待）不算悬念，不记。\n' +
             '【输出】只输出这五张 Markdown 表格本身（各带 ## 标题），不要输出【现有档案】等输入标记、不要加任何解释或前后缀。';
 
+        // [MP] 每楼摘要提示词（大改版第一期）。真正干活的那份在桥 index.js 的 ABS_DEFAULT_PROMPT，
+        //      这里是给设置界面展示/编辑用的同文案副本——改这里必须同步改桥那份，两边要一字不差！
+        const DEFAULT_ABS_PROMPT =
+            '你是长篇小说的剧情档案员。「用户输入」是小说的一楼正文（可能附带【背景参考·作者输入】）。' +
+            '唯一任务：为【本楼正文】写一段80~160字的剧情摘要，只输出 <mpabs>摘要正文</mpabs>，标签外一个字都不写。\n' +
+            '【要求】\n' +
+            '1. 只概括【本楼正文】里发生的事；背景参考仅用于理解，不得写进摘要。\n' +
+            '2. 客观第三人称叙事体；人物一律用原文原名称呼，禁止出现「你」「我」这类称呼。\n' +
+            '3. 必留：具体行动与结果、关键对话的核心内容、人物关系或情绪的实质变化、时间地点变动、重要物品的出现与转移。\n' +
+            '4. 剔除：景物渲染、修辞、逐句对白、无实质推进的往来。\n' +
+            '5. 亲密与成人情节同样是剧情事实，照实概括到具体行为与关系进展，不回避不含糊。\n' +
+            '6. 摘要是一段纯文本，不用列表、标题、加粗，不带任何解释或前后缀。';
+
         async function getSetting(key, dflt) {
             if (!db) return dflt;
             const r = await idbReq(tx('settings', 'readonly').get(key));
@@ -2454,6 +2476,9 @@
             document.getElementById('s-prompt').value = (await getSetting('summaryPrompt', DEFAULT_SUMMARY_PROMPT)) || DEFAULT_SUMMARY_PROMPT;
             document.getElementById('s-codex-prompt').value = (await getSetting('codexPrompt', DEFAULT_CODEX_PROMPT)) || DEFAULT_CODEX_PROMPT;
             document.getElementById('s-jailbreak').value = await getSetting('jailbreakPrompt', '');
+            // [MP] 每楼摘要线：开关与提示词（桥现用现读 settings 库，这里只管读写落库）
+            document.getElementById('s-abs-on').checked = !!(await getSetting('absEnabled', false));
+            document.getElementById('s-abs-prompt').value = (await getSetting('absPrompt', '')) || DEFAULT_ABS_PROMPT;
             // [MP] 注入设置（全局，不分聊天）：开关/位置/深度
             injEnabled = await getSetting('injEnabled', false);
             injPos = await getSetting('injPos', 1);
@@ -2559,6 +2584,15 @@
         }
         wirePromptEditor('s-prompt', 'pf-tools-sum', 'summaryPrompt', '总结提示词', DEFAULT_SUMMARY_PROMPT);
         wirePromptEditor('s-codex-prompt', 'pf-tools-codex', 'codexPrompt', '档案提示词', DEFAULT_CODEX_PROMPT);
+        wirePromptEditor('s-abs-prompt', 'pf-tools-abs', 'absPrompt', '摘要提示词', DEFAULT_ABS_PROMPT);
+
+        // [MP] 每楼摘要开关：即点即存。桥每次干活前现读 settings，这里落了库就算生效，不用刷新酒馆页。
+        document.getElementById('s-abs-on').onchange = async (e) => {
+            try {
+                await putSetting('absEnabled', !!e.target.checked);
+                toast('每楼摘要已' + (e.target.checked ? '开启（下一楼落地就开始）' : '关闭'));
+            } catch (err) { toast('保存失败：' + (err && err.message || err)); }
+        };
 
         // [MP] 选中拉取到的模型 → 回填model输入框
         document.getElementById('s-model-pick').onchange = (e) => {
